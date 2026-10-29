@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1572e8">
+  <title>Trạm quét QR điểm danh</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root {
+      --chinh: #1572e8; --chinh-dam: #0a58ca; --nen: #f1f5f9; --the: #ffffff; --chu: #0f172a; --mo: #64748b;
+      --vien: #e2e8f0; --xanh: #16a34a; --vang: #d97706; --do: #dc2626;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --nen: #0b1220; --the: #111a2e; --chu: #e2e8f0; --mo: #94a3b8; --vien: #1f2a44; }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: var(--nen); color: var(--chu); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+    body { min-height: 100vh; padding-bottom: env(safe-area-inset-bottom); }
+    header { position: sticky; top: 0; z-index: 10; background: linear-gradient(135deg, var(--chinh-dam), var(--chinh)); color: #fff; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    header h1 { font-size: 1.05rem; font-weight: 800; line-height: 1.2; }
+    header p { font-size: 0.78rem; opacity: 0.9; }
+    .nut-nho { background: rgba(255,255,255,0.18); color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
+    main { width: 100%; max-width: 520px; margin: 0 auto; padding: 14px 16px 24px; }
+    .the { background: var(--the); border: 1px solid var(--vien); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+    .the h2 { font-size: 1.05rem; margin-bottom: 6px; color: var(--chinh); }
+    .the p.mo { font-size: 0.88rem; color: var(--mo); margin-bottom: 12px; line-height: 1.45; }
+    label { display: block; font-size: 0.82rem; font-weight: 700; margin: 10px 0 4px; }
+    input, select { width: 100%; font-size: 16px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--vien); background: var(--nen); color: var(--chu); }
+    .nut { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 48px; border: 0; border-radius: 12px; font-size: 1rem; font-weight: 800; cursor: pointer; margin-top: 12px; }
+    .nut-chinh { background: var(--chinh); color: #fff; }
+    .nut-xanh { background: var(--xanh); color: #fff; }
+    .nut-vien { background: transparent; color: var(--chinh); border: 1.5px solid var(--chinh); }
+    .nut:disabled { opacity: 0.6; }
+    .loi { color: var(--do); font-size: 0.88rem; font-weight: 700; margin-top: 10px; }
+    .an { display: none !important; }
+    #vungCamera { width: 100%; border-radius: 14px; overflow: hidden; background: #000; min-height: 240px; }
+    #vungCamera video { border-radius: 14px; }
+    .ket-qua { border-radius: 16px; padding: 18px 16px; color: #fff; text-align: center; margin-bottom: 14px; transition: background 0.2s; }
+    .ket-qua.cho { background: linear-gradient(135deg, #334155, #475569); }
+    .ket-qua.thanh-cong { background: linear-gradient(135deg, #15803d, #22c55e); }
+    .ket-qua.canh-bao { background: linear-gradient(135deg, #b45309, #f59e0b); }
+    .ket-qua.loi-kq { background: linear-gradient(135deg, #b91c1c, #ef4444); }
+    .ket-qua .bt { font-size: 2.4rem; line-height: 1; }
+    .ket-qua .ten { font-size: 1.3rem; font-weight: 800; margin-top: 6px; word-break: break-word; }
+    .ket-qua .phu { font-size: 0.95rem; opacity: 0.95; margin-top: 2px; }
+    .dem { display: flex; justify-content: space-between; align-items: center; font-weight: 800; margin-bottom: 10px; }
+    .dem span.so { background: var(--chinh); color: #fff; border-radius: 999px; padding: 4px 12px; }
+    .hang { display: flex; gap: 8px; }
+    .hang input { flex: 1; min-width: 0; }
+    .hang .nut { width: auto; margin-top: 0; padding: 0 16px; }
+    ul.lich-su { list-style: none; }
+    ul.lich-su li { display: flex; justify-content: space-between; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--vien); font-size: 0.92rem; }
+    ul.lich-su li:last-child { border-bottom: 0; }
+    ul.lich-su .tg { color: var(--mo); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    ul.lich-su .ok { color: var(--xanh); font-weight: 700; }
+    ul.lich-su .x { color: var(--do); font-weight: 700; }
+    ul.lich-su .tr { color: var(--vang); font-weight: 700; }
+    .chu-nho { font-size: 0.8rem; color: var(--mo); text-align: center; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Trạm quét QR điểm danh</h1>
+      <p id="txtGiaoXu">Faith Formation</p>
+    </div>
+    <button type="button" id="nutDangXuat" class="nut-nho an" onclick="dangXuat()">Đăng xuất</button>
+  </header>
+
+  <main>
+    <section id="manCaiDat" class="the an">
+      <h2>Kết nối với hệ thống</h2>
+      <p class="mo">Dán <b>link Web App</b> của Faith Formation (dạng <code>https://script.google.com/macros/s/.../exec</code>). Chỉ cần làm một lần trên mỗi điện thoại.</p>
+      <label for="inpLinkApi">Link Web App</label>
+      <input id="inpLinkApi" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
+      <div id="loiCaiDat" class="loi an"></div>
+      <button type="button" class="nut nut-chinh" onclick="luuCaiDat()">Lưu và tiếp tục</button>
+    </section>
+
+    <section id="manDangNhap" class="the an">
+      <h2>Đăng nhập Giáo lý viên</h2>
+      <p class="mo">Dùng Gmail và mã PIN như trên hệ thống quản lý.</p>
+      <label for="inpEmail">Gmail</label>
+      <input id="inpEmail" type="email" autocomplete="username" placeholder="ten@gmail.com">
+      <label for="inpPin">Mã PIN</label>
+      <input id="inpPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Mã PIN">
+      <div id="loiDangNhap" class="loi an"></div>
+      <button type="button" id="nutDangNhap" class="nut nut-chinh" onclick="dangNhap()">Đăng nhập</button>
+      <button type="button" class="nut nut-vien" onclick="moCaiDat()">Đổi link Web App</button>
+    </section>
+
+    <section id="manQuet" class="an">
+      <div id="ketQua" class="ket-qua cho">
+        <div class="bt">📷</div>
+        <div class="ten">Sẵn sàng quét</div>
+        <div class="phu">Bấm "Bật camera" rồi đưa thẻ vào khung</div>
+      </div>
+
+      <div class="the">
+        <div id="vungCamera"></div>
+        <select id="selCamera" class="an" style="margin-top:10px;" onchange="doiCamera()"></select>
+        <button type="button" id="nutCamera" class="nut nut-xanh" onclick="batTatCamera()">📷 Bật camera</button>
+        <p class="chu-nho">Giữ thẻ cách camera khoảng 15–25 cm, đủ sáng. Mỗi em chỉ cần đưa thẻ qua một lần.</p>
+      </div>
+
+      <div class="the">
+        <div class="hang">
+          <input id="inpMaTay" autocapitalize="characters" placeholder="Nhập mã học viên (VD: TN0001)">
+          <button type="button" class="nut nut-chinh" onclick="ghiNhanTay()">Ghi nhận</button>
+        </div>
+      </div>
+
+      <div class="the">
+        <div class="dem"><span>Đã quét trong phiên này</span><span class="so" id="txtDem">0</span></div>
+        <ul class="lich-su" id="dsLichSu"><li><span class="tg">Chưa có lượt quét nào.</span></li></ul>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const KHOA_API = 'FF_TRAM_API';
+    const KHOA_TOKEN = 'FF_TRAM_TOKEN';
+    const KHOA_TEN = 'FF_TRAM_TEN';
+    const MAU_LINK_API = /^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[A-Za-z0-9_-]+\/exec$/;
+    const THOI_GIAN_CHONG_TRUNG_MS = 5000;
+
+    const TT = { api: '', token: '', ten: '', mayQuet: null, dangBat: false, dangGui: false, maGanNhat: '', luc: 0, soLuot: 0, lichSu: [], amThanh: null };
+
+    function docLT(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+    function ghiLT(k, v) { try { localStorage.setItem(k, v); } catch (e) { return; } }
+    function xoaLT(k) { try { localStorage.removeItem(k); } catch (e) { return; } }
+    function $(id) { return document.getElementById(id); }
+
+    function hienMan(ten) {
+      ['manCaiDat', 'manDangNhap', 'manQuet'].forEach(function(m) { $(m).classList.toggle('an', m !== ten); });
+      $('nutDangXuat').classList.toggle('an', ten !== 'manQuet');
+    }
+
+    function baoLoi(id, thongBao) {
+      const o = $(id);
+      if (!thongBao) { o.classList.add('an'); o.textContent = ''; return; }
+      o.textContent = thongBao; o.classList.remove('an');
+    }
+
+    async function goiApi(duLieu) {
+      let phanHoi;
+      try {
+        phanHoi = await fetch(TT.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(duLieu), redirect: 'follow' });
+      } catch (e) {
+        throw new Error('Không kết nối được máy chủ. Kiểm tra mạng Internet.');
+      }
+      if (!phanHoi.ok) throw new Error('Máy chủ trả lỗi ' + phanHoi.status + '.');
+      const vanBan = await phanHoi.text();
+      try {
+        return JSON.parse(vanBan);
+      } catch (e) {
+        throw new Error('Web App chưa có cổng cho trạm quét. Hãy cập nhật code và tạo phiên bản triển khai mới.');
+      }
+    }
+
+    function moCaiDat() {
+      $('inpLinkApi').value = TT.api;
+      baoLoi('loiCaiDat', '');
+      hienMan('manCaiDat');
+    }
+
+    function luuCaiDat() {
+      const link = $('inpLinkApi').value.trim().split('?')[0].split('#')[0];
+      if (!MAU_LINK_API.test(link)) { baoLoi('loiCaiDat', 'Link chưa đúng. Link phải bắt đầu bằng https://script.google.com/macros/s/ và kết thúc bằng /exec'); return; }
+      TT.api = link; ghiLT(KHOA_API, link);
+      hienMan('manDangNhap');
+    }
+
+    async function dangNhap() {
+      const email = $('inpEmail').value.trim(), pin = $('inpPin').value.trim(), nut = $('nutDangNhap');
+      if (!email || !pin) { baoLoi('loiDangNhap', 'Vui lòng nhập Gmail và mã PIN.'); return; }
+      baoLoi('loiDangNhap', ''); nut.disabled = true; nut.textContent = 'Đang đăng nhập...';
+      try {
+        const kq = await goiApi({ hanhDong: 'dangNhap', email: email, maPin: pin });
+        if (!kq.thanhCong) { baoLoi('loiDangNhap', kq.thongBao || 'Đăng nhập không thành công.'); return; }
+        TT.token = kq.phien.token; TT.ten = [kq.phien.tenThanh, kq.phien.hoTen].filter(Boolean).join(' ');
+        ghiLT(KHOA_TOKEN, TT.token); ghiLT(KHOA_TEN, TT.ten);
+        $('inpPin').value = '';
+        vaoManQuet();
+      } catch (e) {
+        baoLoi('loiDangNhap', e.message);
+      } finally {
+        nut.disabled = false; nut.textContent = 'Đăng nhập';
+      }
+    }
+
+    function vaoManQuet() {
+      $('txtGiaoXu').textContent = TT.ten ? 'GLV: ' + TT.ten : 'Faith Formation';
+      hienMan('manQuet');
+    }
+
+    async function dangXuat() {
+      await tatCamera();
+      const token = TT.token;
+      TT.token = ''; xoaLT(KHOA_TOKEN); xoaLT(KHOA_TEN);
+      if (token) goiApi({ hanhDong: 'dangXuat', token: token }).catch(function() { return null; });
+      hienMan('manDangNhap');
+    }
+
+    function phatAm(loai) {
+      try {
+        if (!TT.amThanh) TT.amThanh = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = TT.amThanh, osc = ctx.createOscillator(), gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(loai === 'ok' ? 1046 : (loai === 'trung' ? 660 : 220), ctx.currentTime);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(); osc.stop(ctx.currentTime + (loai === 'loi' ? 0.35 : 0.12));
+      } catch (e) {
+        TT.amThanh = null;
+      }
+      if (navigator.vibrate) navigator.vibrate(loai === 'ok' ? 80 : [80, 60, 80]);
+    }
+
+    function hienKetQua(loai, bieuTuong, ten, phu) {
+      const k = $('ketQua');
+      k.className = 'ket-qua ' + loai;
+      k.innerHTML = '';
+      [['bt', bieuTuong], ['ten', ten], ['phu', phu || '']].forEach(function(p) {
+        const d = document.createElement('div'); d.className = p[0]; d.textContent = p[1]; k.appendChild(d);
+      });
+    }
+
+    function themLichSu(loai, ten, ghiChu) {
+      const now = new Date();
+      TT.lichSu.unshift({ loai: loai, ten: ten, ghiChu: ghiChu, gio: ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2) });
+      TT.lichSu = TT.lichSu.slice(0, 30);
+      const ul = $('dsLichSu');
+      ul.innerHTML = '';
+      TT.lichSu.forEach(function(m) {
+        const li = document.createElement('li');
+        const trai = document.createElement('span');
+        const nhan = document.createElement('span');
+        nhan.className = m.loai === 'ok' ? 'ok' : (m.loai === 'trung' ? 'tr' : 'x');
+        nhan.textContent = m.loai === 'ok' ? '✓ ' : (m.loai === 'trung' ? '• ' : '✗ ');
+        trai.appendChild(nhan);
+        trai.appendChild(document.createTextNode(m.ten + (m.ghiChu ? ' – ' + m.ghiChu : '')));
+        const phai = document.createElement('span'); phai.className = 'tg'; phai.textContent = m.gio;
+        li.appendChild(trai); li.appendChild(phai); ul.appendChild(li);
+      });
+    }
+
+    async function xuLyMa(ma) {
+      const maSach = String(ma || '').trim();
+      if (!maSach || TT.dangGui) return;
+      const bayGio = Date.now();
+      if (maSach === TT.maGanNhat && bayGio - TT.luc < THOI_GIAN_CHONG_TRUNG_MS) return;
+      TT.maGanNhat = maSach; TT.luc = bayGio; TT.dangGui = true;
+      hienKetQua('cho', '⏳', 'Đang ghi nhận...', maSach);
+      try {
+        const kq = await goiApi({ hanhDong: 'quet', token: TT.token, ma: maSach, maChienDich: '' });
+        if (kq.thanhCong) {
+          const hv = kq.hocVien || {};
+          TT.soLuot = kq.soEmDaQuetTrongBuoi || (TT.soLuot + 1);
+          $('txtDem').textContent = TT.soLuot;
+          phatAm('ok');
+          hienKetQua('thanh-cong', '✅', hv.hoTenDayDu || maSach, (hv.tenLop || '') + ' – Có mặt lúc ' + (kq.thoiGian || ''));
+          themLichSu('ok', hv.hoTenDayDu || maSach, hv.tenLop || '');
+        } else if (kq.maLoi === 'HET_PHIEN' || /Phiên đăng nhập/i.test(kq.thongBao || '')) {
+          phatAm('loi');
+          await tatCamera();
+          TT.token = ''; xoaLT(KHOA_TOKEN);
+          baoLoi('loiDangNhap', 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.');
+          hienMan('manDangNhap');
+        } else if (kq.maLoi === 'QUET_TRUNG') {
+          phatAm('trung');
+          hienKetQua('canh-bao', 'ℹ️', 'Đã điểm danh rồi', kq.thongBao || '');
+          themLichSu('trung', maSach, 'đã điểm danh');
+        } else {
+          phatAm('loi');
+          hienKetQua('loi-kq', '⚠️', 'Chưa ghi nhận được', kq.thongBao || 'Lỗi không xác định.');
+          themLichSu('loi', maSach, kq.thongBao || 'lỗi');
+        }
+      } catch (e) {
+        phatAm('loi');
+        TT.maGanNhat = '';
+        hienKetQua('loi-kq', '📡', 'Lỗi kết nối', e.message);
+        themLichSu('loi', maSach, 'lỗi kết nối – quét lại');
+      } finally {
+        TT.dangGui = false;
+      }
+    }
+
+    function ghiNhanTay() {
+      const o = $('inpMaTay');
+      const ma = o.value.trim();
+      if (!ma) return;
+      o.value = '';
+      TT.maGanNhat = '';
+      xuLyMa(ma);
+    }
+
+    function cauHinhQuet() {
+      return {
+        fps: 12,
+        qrbox: function(w, h) { const m = Math.max(160, Math.floor(Math.min(w, h) * 0.72)); return { width: m, height: m }; },
+        aspectRatio: 1.0,
+        disableFlip: false
+      };
+    }
+
+    async function batCamera(maCamera) {
+      if (typeof Html5Qrcode === 'undefined') {
+        hienKetQua('loi-kq', '⚠️', 'Chưa tải được bộ quét', 'Kiểm tra mạng rồi tải lại trang. Trong lúc chờ, có thể nhập mã bằng tay.');
+        return;
+      }
+      if (!TT.mayQuet) {
+        TT.mayQuet = new Html5Qrcode('vungCamera', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false });
+      }
+      const nut = $('nutCamera');
+      nut.disabled = true; nut.textContent = 'Đang mở camera...';
+      try {
+        await TT.mayQuet.start(maCamera ? { deviceId: { exact: maCamera } } : { facingMode: 'environment' }, cauHinhQuet(), function(ma) { xuLyMa(ma); }, function() { return null; });
+        TT.dangBat = true;
+        nut.className = 'nut nut-vien'; nut.textContent = '⏹ Tắt camera';
+        hienKetQua('cho', '📷', 'Đang quét...', 'Đưa thẻ học viên vào khung');
+        napDanhSachCamera();
+      } catch (e) {
+        TT.dangBat = false;
+        nut.className = 'nut nut-xanh'; nut.textContent = '📷 Bật camera';
+        const tuChoi = /Permission|NotAllowed/i.test(String(e && (e.name || e.message || e)));
+        hienKetQua('loi-kq', '🚫', tuChoi ? 'Chưa cấp quyền camera' : 'Không mở được camera', tuChoi ? 'Bấm biểu tượng ổ khóa trên thanh địa chỉ, cho phép Camera rồi bấm Bật camera lại.' : String(e && (e.message || e)));
+      } finally {
+        nut.disabled = false;
+      }
+    }
+
+    async function tatCamera() {
+      if (TT.mayQuet && TT.dangBat) {
+        try { await TT.mayQuet.stop(); } catch (e) { TT.dangBat = false; }
+      }
+      TT.dangBat = false;
+      const nut = $('nutCamera');
+      nut.className = 'nut nut-xanh'; nut.textContent = '📷 Bật camera';
+    }
+
+    function batTatCamera() {
+      if (!TT.amThanh) {
+        try { TT.amThanh = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { TT.amThanh = null; }
+      }
+      if (TT.dangBat) { tatCamera(); hienKetQua('cho', '📷', 'Đã tắt camera', 'Bấm "Bật camera" để quét tiếp'); }
+      else batCamera($('selCamera').value || '');
+    }
+
+    async function napDanhSachCamera() {
+      try {
+        const ds = await Html5Qrcode.getCameras();
+        const sel = $('selCamera');
+        if (!ds || ds.length < 2) { sel.classList.add('an'); return; }
+        const giaTri = sel.value;
+        sel.innerHTML = '';
+        ds.forEach(function(c, i) { const o = document.createElement('option'); o.value = c.id; o.textContent = c.label || ('Camera ' + (i + 1)); sel.appendChild(o); });
+        if (giaTri) sel.value = giaTri;
+        sel.classList.remove('an');
+      } catch (e) {
+        $('selCamera').classList.add('an');
+      }
+    }
+
+    async function doiCamera() {
+      await tatCamera();
+      batCamera($('selCamera').value);
+    }
+
+    document.addEventListener('visibilitychange', function() {
+      if (document.hidden && TT.dangBat) { tatCamera(); hienKetQua('cho', '📷', 'Camera đã tạm tắt', 'Bấm "Bật camera" để quét tiếp'); }
+    });
+
+    window.addEventListener('DOMContentLoaded', async function() {
+      $('inpMaTay').addEventListener('keydown', function(e) { if (e.key === 'Enter') ghiNhanTay(); });
+      $('inpPin').addEventListener('keydown', function(e) { if (e.key === 'Enter') dangNhap(); });
+      const thamSo = new URLSearchParams(location.search);
+      const apiTuLink = (thamSo.get('api') || '').trim();
+      if (MAU_LINK_API.test(apiTuLink)) ghiLT(KHOA_API, apiTuLink);
+      TT.api = docLT(KHOA_API);
+      TT.token = docLT(KHOA_TOKEN);
+      TT.ten = docLT(KHOA_TEN);
+      if (!MAU_LINK_API.test(TT.api)) { moCaiDat(); return; }
+      if (!TT.token) { hienMan('manDangNhap'); return; }
+      vaoManQuet();
+      try {
+        const kq = await goiApi({ hanhDong: 'kiemTraPhien', token: TT.token });
+        if (!kq.thanhCong) { TT.token = ''; xoaLT(KHOA_TOKEN); hienMan('manDangNhap'); return; }
+        if (kq.tenGiaoXu) $('txtGiaoXu').textContent = kq.tenGiaoXu + (TT.ten ? ' • ' + TT.ten : '');
+      } catch (e) {
+        hienKetQua('loi-kq', '📡', 'Chưa kết nối được máy chủ', e.message);
+      }
+    });
+  </script>
+</body>
+</html>
