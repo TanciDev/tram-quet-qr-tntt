@@ -60,6 +60,17 @@
     ul.lich-su .x { color: var(--do); font-weight: 700; }
     ul.lich-su .tr { color: var(--vang); font-weight: 700; }
     .chu-nho { font-size: 0.8rem; color: var(--mo); text-align: center; margin-top: 8px; }
+    .the-lich { border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; border: 1.5px solid var(--vien); background: var(--the); }
+    .the-lich .nhan { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--mo); }
+    .the-lich .ten-lich { font-size: 1.05rem; font-weight: 800; margin-top: 2px; }
+    .the-lich .mo-ta { font-size: 0.85rem; margin-top: 2px; }
+    .the-lich.mo { border-color: var(--xanh); }
+    .the-lich.tre { border-color: var(--vang); }
+    .the-lich.dong { border-color: var(--do); }
+    .the-lich.mo .mo-ta { color: var(--xanh); font-weight: 700; }
+    .the-lich.tre .mo-ta { color: var(--vang); font-weight: 700; }
+    .the-lich.dong .mo-ta { color: var(--do); font-weight: 700; }
+    .the-lich select { margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -96,7 +107,13 @@
     <section id="manQuet" class="an">
       <div id="canhBaoTrinhDuyet" class="the an" style="border-color: var(--vang);">
         <h2 style="color: var(--vang);">Hãy mở bằng Chrome hoặc Safari</h2>
-        <p class="mo" style="margin-bottom:0;">Bạn đang mở trang trong <b id="txtTenUngDung">ứng dụng khác</b>, nơi thường chặn camera. Bấm nút <b>⋯</b> hoặc <b>⋮</b> ở góc màn hình, chọn <b>"Mở bằng trình duyệt"</b>. Trong lúc đó vẫn có thể dùng nút <b>Chụp ảnh thẻ</b> bên dưới.</p>
+        <p class="mo" style="margin-bottom:0;">Bạn đang mở trang trong <b id="txtTenUngDung">ứng dụng khác</b>, nơi thường chặn camera. Bấm nút <b>⋯</b> hoặc <b>⋮</b> ở góc màn hình, chọn <b>"Mở bằng trình duyệt"</b>.</p>
+      </div>
+      <div id="theLich" class="the-lich">
+        <div class="nhan">Lịch điểm danh</div>
+        <div class="ten-lich" id="txtTenLich">Đang tải lịch...</div>
+        <div class="mo-ta" id="txtMoTaLich"></div>
+        <select id="selLich" class="an" onchange="chonLich(this.value)"></select>
       </div>
       <div id="ketQua" class="ket-qua cho">
         <div class="bt">📷</div>
@@ -112,8 +129,6 @@
         </div>
         <select id="selCamera" class="an" style="margin-top:10px;" onchange="doiCamera()"></select>
         <button type="button" id="nutCamera" class="nut nut-xanh" onclick="batTatCamera()">📷 Bật camera</button>
-        <label class="nut nut-vien" for="inpAnhThe" style="cursor:pointer;">📸 Chụp ảnh thẻ (dự phòng)</label>
-        <input type="file" id="inpAnhThe" accept="image/*" capture="environment" class="an" onchange="quetTuAnh(this)">
         <p class="chu-nho">Giữ thẻ cách camera khoảng 15–25 cm, đủ sáng. Mỗi em chỉ cần đưa thẻ qua một lần.</p>
       </div>
 
@@ -138,7 +153,7 @@
     const MAU_LINK_API = /^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[A-Za-z0-9_-]+\/exec$/;
     const THOI_GIAN_CHONG_TRUNG_MS = 5000;
 
-    const TT = { api: '', token: '', ten: '', luong: null, hen: 0, boDoc: null, canvas: null, dangBat: false, dangGui: false, maGanNhat: '', luc: 0, soLuot: 0, lichSu: [], amThanh: null };
+    const TT = { api: '', token: '', ten: '', dsLich: [], maLich: '', thongBaoLich: '', henLich: 0, luong: null, hen: 0, boDoc: null, canvas: null, dangBat: false, dangGui: false, maGanNhat: '', luc: 0, soLuot: 0, lichSu: [], amThanh: null };
 
     function docLT(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
     function ghiLT(k, v) { try { localStorage.setItem(k, v); } catch (e) { return; } }
@@ -208,10 +223,72 @@
       const ungDung = layTenUngDungNhung();
       if (ungDung) { $('txtTenUngDung').textContent = ungDung; $('canhBaoTrinhDuyet').classList.remove('an'); }
       hienMan('manQuet');
+      taiLichDangMo();
+      clearInterval(TT.henLich);
+      TT.henLich = setInterval(function() { if (!document.hidden && TT.token) taiLichDangMo(); }, 60000);
+    }
+
+    function veTheLich() {
+      const the = $('theLich'), sel = $('selLich');
+      const l = TT.dsLich.find(function(x) { return x.maLich === TT.maLich; });
+      sel.classList.toggle('an', TT.dsLich.length < 2);
+      if (TT.dsLich.length >= 2) {
+        sel.innerHTML = '';
+        const dau = document.createElement('option'); dau.value = ''; dau.textContent = '— Chọn lịch để quét —'; sel.appendChild(dau);
+        TT.dsLich.forEach(function(x) {
+          const o = document.createElement('option'); o.value = x.maLich; o.textContent = (x.theoLop ? '📖 ' : '⛪ ') + x.tenLich + ' (' + x.gioBatDau + '–' + x.gioKetThuc + ')'; sel.appendChild(o);
+        });
+        sel.value = TT.maLich;
+      }
+      if (TT.dsLich.length === 0) {
+        the.className = 'the-lich dong';
+        $('txtTenLich').textContent = 'Không có lịch nào đang mở';
+        $('txtMoTaLich').textContent = TT.thongBaoLich || 'Chưa tới giờ điểm danh.';
+        return;
+      }
+      if (!l) {
+        the.className = 'the-lich tre';
+        $('txtTenLich').textContent = 'Có ' + TT.dsLich.length + ' lịch cùng giờ';
+        $('txtMoTaLich').textContent = 'Hãy chọn lịch trước khi quét.';
+        return;
+      }
+      the.className = 'the-lich ' + (l.trangThaiGhi === 'Đi trễ' ? 'tre' : 'mo');
+      $('txtTenLich').textContent = (l.theoLop ? '📖 ' : '⛪ ') + l.tenLich + ' · ' + l.gioBatDau + '–' + l.gioKetThuc;
+      $('txtMoTaLich').textContent = l.trangThaiGhi === 'Đi trễ'
+        ? 'Đã qua giờ kết thúc – quét bây giờ ghi Đi trễ (đến ' + l.hetTreLuc + ')'
+        : 'Quét bây giờ ghi Có mặt (đến ' + l.gioKetThuc + '), Đi trễ đến ' + l.hetTreLuc;
+    }
+
+    function capNhatDanhSachLich(ds, thongBao) {
+      TT.dsLich = Array.isArray(ds) ? ds : [];
+      TT.thongBaoLich = thongBao || '';
+      if (TT.dsLich.length === 1) TT.maLich = TT.dsLich[0].maLich;
+      else if (!TT.dsLich.some(function(x) { return x.maLich === TT.maLich; })) TT.maLich = '';
+      veTheLich();
+    }
+
+    function chonLich(ma) {
+      TT.maLich = ma;
+      TT.maGanNhat = '';
+      veTheLich();
+    }
+
+    async function taiLichDangMo() {
+      try {
+        const kq = await goiApi({ hanhDong: 'lichDangMo', token: TT.token });
+        if (kq.maLoi === 'HET_PHIEN') { await tatCamera(); TT.token = ''; xoaLT(KHOA_TOKEN); baoLoi('loiDangNhap', 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.'); hienMan('manDangNhap'); return; }
+        if (!kq.thanhCong) { capNhatDanhSachLich([], kq.thongBao || 'Không tải được lịch.'); return; }
+        capNhatDanhSachLich(kq.danhSach, kq.thongBao);
+      } catch (e) {
+        $('txtTenLich').textContent = 'Chưa tải được lịch';
+        $('txtMoTaLich').textContent = e.message;
+        $('theLich').className = 'the-lich dong';
+      }
     }
 
     async function dangXuat() {
       await tatCamera();
+      clearInterval(TT.henLich);
       const token = TT.token;
       TT.token = ''; xoaLT(KHOA_TOKEN); xoaLT(KHOA_TEN);
       if (token) goiApi({ hanhDong: 'dangXuat', token: token }).catch(function() { return null; });
@@ -264,25 +341,39 @@
     async function xuLyMa(ma) {
       const maSach = String(ma || '').trim();
       if (!maSach || TT.dangGui) return;
+      if (!TT.maLich && TT.dsLich.length > 1) {
+        if (maSach !== TT.maGanNhat || Date.now() - TT.luc >= THOI_GIAN_CHONG_TRUNG_MS) { TT.maGanNhat = maSach; TT.luc = Date.now(); phatAm('loi'); hienKetQua('canh-bao', '🗓️', 'Chưa chọn lịch', 'Có nhiều lịch cùng giờ, hãy chọn lịch ở phía trên rồi quét lại.'); }
+        return;
+      }
       const bayGio = Date.now();
       if (maSach === TT.maGanNhat && bayGio - TT.luc < THOI_GIAN_CHONG_TRUNG_MS) return;
       TT.maGanNhat = maSach; TT.luc = bayGio; TT.dangGui = true;
       hienKetQua('cho', '⏳', 'Đang ghi nhận...', maSach);
       try {
-        const kq = await goiApi({ hanhDong: 'quet', token: TT.token, ma: maSach, maChienDich: '' });
+        const kq = await goiApi({ hanhDong: 'quet', token: TT.token, ma: maSach, maLich: TT.maLich });
+        if (kq.lich) {
+          const viTri = TT.dsLich.findIndex(function(x) { return x.maLich === kq.lich.maLich; });
+          if (viTri >= 0) { TT.dsLich[viTri] = kq.lich; veTheLich(); }
+        }
         if (kq.thanhCong) {
           const hv = kq.hocVien || {};
           TT.soLuot = kq.soEmDaQuetTrongBuoi || (TT.soLuot + 1);
           $('txtDem').textContent = TT.soLuot;
           phatAm('ok');
-          hienKetQua('thanh-cong', '✅', hv.hoTenDayDu || maSach, (hv.tenLop || '') + ' – Có mặt lúc ' + (kq.thoiGian || ''));
-          themLichSu('ok', hv.hoTenDayDu || maSach, hv.tenLop || '');
+          const laTre = kq.trangThai === 'Đi trễ';
+          hienKetQua(laTre ? 'canh-bao' : 'thanh-cong', laTre ? '⏰' : '✅', hv.hoTenDayDu || maSach, (hv.tenLop || '') + ' – ' + (kq.trangThai || 'Có mặt') + ' lúc ' + (kq.thoiGian || ''));
+          themLichSu('ok', hv.hoTenDayDu || maSach, (hv.tenLop || '') + (laTre ? ' · Đi trễ' : ''));
         } else if (kq.maLoi === 'HET_PHIEN' || /Phiên đăng nhập/i.test(kq.thongBao || '')) {
           phatAm('loi');
           await tatCamera();
           TT.token = ''; xoaLT(KHOA_TOKEN);
           baoLoi('loiDangNhap', 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.');
           hienMan('manDangNhap');
+        } else if (kq.maLoi === 'NGOAI_GIO' || kq.maLoi === 'CHON_LICH') {
+          phatAm('loi');
+          TT.maGanNhat = '';
+          capNhatDanhSachLich(kq.danhSachLich, kq.maLoi === 'NGOAI_GIO' ? kq.thongBao : '');
+          hienKetQua(kq.maLoi === 'CHON_LICH' ? 'canh-bao' : 'loi-kq', '🗓️', kq.maLoi === 'CHON_LICH' ? 'Chưa chọn lịch' : 'Ngoài giờ điểm danh', kq.thongBao || '');
         } else if (kq.maLoi === 'QUET_TRUNG') {
           phatAm('trung');
           hienKetQua('canh-bao', 'ℹ️', 'Đã điểm danh rồi', kq.thongBao || '');
@@ -334,16 +425,17 @@
       const chuoi = moTaLoi(e);
       const ungDung = layTenUngDungNhung();
       if (/SecureContext/i.test(chuoi) || !window.isSecureContext) return { tieuDe: 'Trang chưa chạy qua https', chiTiet: 'Hãy mở đúng link https://tancidev.github.io/tram-quet-qr-tntt/' };
-      if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return { tieuDe: 'Trình duyệt này không cho dùng camera', chiTiet: ungDung ? 'Bạn đang mở trong ' + ungDung + '. Hãy mở link bằng Chrome hoặc Safari.' : 'Hãy mở link bằng Chrome (Android) hoặc Safari (iPhone), hoặc dùng nút Chụp ảnh thẻ.' };
+      if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return { tieuDe: 'Trình duyệt này không cho dùng camera', chiTiet: ungDung ? 'Bạn đang mở trong ' + ungDung + '. Hãy mở link bằng Chrome hoặc Safari.' : 'Hãy mở link bằng Chrome (Android) hoặc Safari (iPhone).' };
       if (/NotAllowed|Permission|denied|SecurityError/i.test(chuoi)) {
         if (/system/i.test(chuoi)) return { tieuDe: 'Điện thoại đang chặn trình duyệt dùng camera', chiTiet: 'Vào Cài đặt → Ứng dụng → Chrome (hoặc trình duyệt bạn dùng) → Quyền → Camera → Cho phép. Sau đó tải lại trang.' };
         if (laIOS()) return { tieuDe: 'Camera đang bị chặn', chiTiet: 'Bấm "aA" ở thanh địa chỉ → Cài đặt trang web → Camera → Hỏi hoặc Cho phép. Nếu không có mục đó: Cài đặt → Safari → Camera → Hỏi. Sau đó tải lại trang.' };
         return { tieuDe: 'Camera đang bị chặn cho trang này', chiTiet: 'Bấm biểu tượng bên trái địa chỉ trang (ổ khóa hoặc ⚙) → Quyền → Camera → Cho phép, rồi tải lại trang. Nếu không thấy, vào Cài đặt → Ứng dụng → Chrome → Quyền → Camera → Cho phép.' };
       }
+      if (/NotSupported/i.test(chuoi)) return { tieuDe: 'Trình duyệt này không cho dùng camera', chiTiet: 'Hãy mở link bằng Chrome (Android) hoặc Safari (iPhone).' };
       if (/NotFound|DevicesNotFound|not found/i.test(chuoi)) return { tieuDe: 'Không tìm thấy camera', chiTiet: 'Thiết bị này không có camera (ví dụ máy tính bàn) hoặc camera đang bị tắt. Hãy mở trang trên điện thoại.' };
       if (/NotReadable|TrackStart|Could not start|AbortError/i.test(chuoi)) return { tieuDe: 'Camera đang bị ứng dụng khác dùng', chiTiet: 'Hãy đóng các ứng dụng đang dùng camera (Camera, Zalo, gọi video…) rồi bấm Bật camera lại. Nếu vẫn lỗi, khởi động lại điện thoại.' };
-      if (/Overconstrained/i.test(chuoi)) return { tieuDe: 'Camera không hỗ trợ cấu hình', chiTiet: 'Hãy chọn camera khác trong danh sách hoặc dùng nút Chụp ảnh thẻ.' };
-      return { tieuDe: 'Không mở được camera', chiTiet: 'Hãy chụp màn hình này gửi người phụ trách, trong lúc đó dùng nút Chụp ảnh thẻ.' };
+      if (/Overconstrained/i.test(chuoi)) return { tieuDe: 'Camera không hỗ trợ cấu hình', chiTiet: 'Hãy chọn camera khác trong danh sách.' };
+      return { tieuDe: 'Không mở được camera', chiTiet: 'Hãy chụp màn hình này gửi người phụ trách, trong lúc đó có thể nhập mã bằng tay bên dưới.' };
     }
 
     function layBoDocQR() {
@@ -442,37 +534,6 @@
       }
     }
 
-    function taiAnh(tep) {
-      return new Promise(function(xong, loi) {
-        const url = URL.createObjectURL(tep);
-        const img = new Image();
-        img.onload = function() { xong({ img: img, url: url }); };
-        img.onerror = function() { URL.revokeObjectURL(url); loi(new Error('Không mở được ảnh')); };
-        img.src = url;
-      });
-    }
-
-    async function quetTuAnh(input) {
-      const tep = input.files && input.files[0];
-      input.value = '';
-      if (!tep) return;
-      await tatCamera();
-      hienKetQua('cho', '🔍', 'Đang đọc mã trong ảnh...', '');
-      let ma = '';
-      try {
-        const a = await taiAnh(tep);
-        const w = a.img.naturalWidth, h = a.img.naturalHeight;
-        ma = await docMaTuNguon(a.img, w, h, false);
-        if (!ma) ma = docBangJsQR(a.img, w, h, true);
-        URL.revokeObjectURL(a.url);
-      } catch (e) {
-        ma = '';
-      }
-      if (ma) { TT.maGanNhat = ''; xuLyMa(ma); return; }
-      phatAm('loi');
-      hienKetQua('loi-kq', '⚠️', 'Không đọc được mã trong ảnh', 'Chụp gần thẻ hơn, đủ sáng, giữ thẳng; hoặc nhập mã bên dưới.');
-    }
-
     async function tatCamera() {
       TT.dangBat = false;
       clearTimeout(TT.hen);
@@ -514,6 +575,7 @@
     }
 
     document.addEventListener('visibilitychange', function() {
+      if (!document.hidden && TT.token && !$('manQuet').classList.contains('an')) taiLichDangMo();
       if (document.hidden && TT.dangBat) { tatCamera(); hienKetQua('cho', '📷', 'Camera đã tạm tắt', 'Bấm "Bật camera" để quét tiếp'); }
     });
 
