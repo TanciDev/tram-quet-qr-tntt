@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#1572e8">
   <title>Trạm quét QR điểm danh</title>
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <style>
     :root {
       --chinh: #1572e8; --chinh-dam: #0a58ca; --nen: #f1f5f9; --the: #ffffff; --chu: #0f172a; --mo: #64748b;
@@ -34,8 +34,11 @@
     .nut:disabled { opacity: 0.6; }
     .loi { color: var(--do); font-size: 0.88rem; font-weight: 700; margin-top: 10px; }
     .an { display: none !important; }
-    #vungCamera { width: 100%; border-radius: 14px; overflow: hidden; background: #000; min-height: 240px; }
-    #vungCamera video { border-radius: 14px; }
+    #vungCamera { position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: 14px; overflow: hidden; background: #000; }
+    #vungCamera video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    #vungCamera .khung-ngam { position: absolute; left: 14%; top: 14%; width: 72%; height: 72%; border: 3px solid rgba(255,255,255,0.9); border-radius: 18px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.28); pointer-events: none; }
+    #vungCamera .goi-y { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 0.95rem; text-align: center; padding: 20px; }
+    .ma-loi { font-size: 0.75rem; opacity: 0.85; margin-top: 8px; font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
     .ket-qua { border-radius: 16px; padding: 18px 16px; color: #fff; text-align: center; margin-bottom: 14px; transition: background 0.2s; }
     .ket-qua.cho { background: linear-gradient(135deg, #334155, #475569); }
     .ket-qua.thanh-cong { background: linear-gradient(135deg, #15803d, #22c55e); }
@@ -91,6 +94,10 @@
     </section>
 
     <section id="manQuet" class="an">
+      <div id="canhBaoTrinhDuyet" class="the an" style="border-color: var(--vang);">
+        <h2 style="color: var(--vang);">Hãy mở bằng Chrome hoặc Safari</h2>
+        <p class="mo" style="margin-bottom:0;">Bạn đang mở trang trong <b id="txtTenUngDung">ứng dụng khác</b>, nơi thường chặn camera. Bấm nút <b>⋯</b> hoặc <b>⋮</b> ở góc màn hình, chọn <b>"Mở bằng trình duyệt"</b>. Trong lúc đó vẫn có thể dùng nút <b>Chụp ảnh thẻ</b> bên dưới.</p>
+      </div>
       <div id="ketQua" class="ket-qua cho">
         <div class="bt">📷</div>
         <div class="ten">Sẵn sàng quét</div>
@@ -98,9 +105,15 @@
       </div>
 
       <div class="the">
-        <div id="vungCamera"></div>
+        <div id="vungCamera">
+          <div class="goi-y" id="goiYCamera">Camera chưa bật</div>
+          <video id="videoCamera" class="an" playsinline muted autoplay></video>
+          <div class="khung-ngam an" id="khungNgam"></div>
+        </div>
         <select id="selCamera" class="an" style="margin-top:10px;" onchange="doiCamera()"></select>
         <button type="button" id="nutCamera" class="nut nut-xanh" onclick="batTatCamera()">📷 Bật camera</button>
+        <label class="nut nut-vien" for="inpAnhThe" style="cursor:pointer;">📸 Chụp ảnh thẻ (dự phòng)</label>
+        <input type="file" id="inpAnhThe" accept="image/*" capture="environment" class="an" onchange="quetTuAnh(this)">
         <p class="chu-nho">Giữ thẻ cách camera khoảng 15–25 cm, đủ sáng. Mỗi em chỉ cần đưa thẻ qua một lần.</p>
       </div>
 
@@ -125,7 +138,7 @@
     const MAU_LINK_API = /^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[A-Za-z0-9_-]+\/exec$/;
     const THOI_GIAN_CHONG_TRUNG_MS = 5000;
 
-    const TT = { api: '', token: '', ten: '', mayQuet: null, dangBat: false, dangGui: false, maGanNhat: '', luc: 0, soLuot: 0, lichSu: [], amThanh: null };
+    const TT = { api: '', token: '', ten: '', luong: null, hen: 0, boDoc: null, canvas: null, dangBat: false, dangGui: false, maGanNhat: '', luc: 0, soLuot: 0, lichSu: [], amThanh: null };
 
     function docLT(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
     function ghiLT(k, v) { try { localStorage.setItem(k, v); } catch (e) { return; } }
@@ -192,6 +205,8 @@
 
     function vaoManQuet() {
       $('txtGiaoXu').textContent = TT.ten ? 'GLV: ' + TT.ten : 'Faith Formation';
+      const ungDung = layTenUngDungNhung();
+      if (ungDung) { $('txtTenUngDung').textContent = ungDung; $('canhBaoTrinhDuyet').classList.remove('an'); }
       hienMan('manQuet');
     }
 
@@ -218,11 +233,11 @@
       if (navigator.vibrate) navigator.vibrate(loai === 'ok' ? 80 : [80, 60, 80]);
     }
 
-    function hienKetQua(loai, bieuTuong, ten, phu) {
+    function hienKetQua(loai, bieuTuong, ten, phu, maLoi) {
       const k = $('ketQua');
       k.className = 'ket-qua ' + loai;
       k.innerHTML = '';
-      [['bt', bieuTuong], ['ten', ten], ['phu', phu || '']].forEach(function(p) {
+      [['bt', bieuTuong], ['ten', ten], ['phu', phu || '']].concat(maLoi ? [['ma-loi', maLoi]] : []).forEach(function(p) {
         const d = document.createElement('div'); d.className = p[0]; d.textContent = p[1]; k.appendChild(d);
       });
     }
@@ -296,46 +311,176 @@
       xuLyMa(ma);
     }
 
-    function cauHinhQuet() {
-      return {
-        fps: 12,
-        qrbox: function(w, h) { const m = Math.max(160, Math.floor(Math.min(w, h) * 0.72)); return { width: m, height: m }; },
-        aspectRatio: 1.0,
-        disableFlip: false
-      };
+    function layTenUngDungNhung() {
+      const ua = navigator.userAgent || '';
+      if (/Zalo/i.test(ua)) return 'Zalo';
+      if (/FBAN|FBAV|FB_IAB|FBIOS/i.test(ua)) return 'Facebook/Messenger';
+      if (/Instagram/i.test(ua)) return 'Instagram';
+      if (/Line\//i.test(ua)) return 'Line';
+      if (/TikTok|musical_ly|Bytedance/i.test(ua)) return 'TikTok';
+      if (/; wv\)/.test(ua)) return 'trình duyệt bên trong ứng dụng';
+      return '';
+    }
+
+    function laIOS() { return /iPhone|iPad|iPod/i.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+
+    function moTaLoi(e) {
+      if (!e) return 'không rõ';
+      if (typeof e === 'string') return e;
+      return [e.name, e.message, e.constraint].filter(Boolean).join(': ') || String(e);
+    }
+
+    function giaiThichLoiCamera(e) {
+      const chuoi = moTaLoi(e);
+      const ungDung = layTenUngDungNhung();
+      if (/SecureContext/i.test(chuoi) || !window.isSecureContext) return { tieuDe: 'Trang chưa chạy qua https', chiTiet: 'Hãy mở đúng link https://tancidev.github.io/tram-quet-qr-tntt/' };
+      if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return { tieuDe: 'Trình duyệt này không cho dùng camera', chiTiet: ungDung ? 'Bạn đang mở trong ' + ungDung + '. Hãy mở link bằng Chrome hoặc Safari.' : 'Hãy mở link bằng Chrome (Android) hoặc Safari (iPhone), hoặc dùng nút Chụp ảnh thẻ.' };
+      if (/NotAllowed|Permission|denied|SecurityError/i.test(chuoi)) {
+        if (/system/i.test(chuoi)) return { tieuDe: 'Điện thoại đang chặn trình duyệt dùng camera', chiTiet: 'Vào Cài đặt → Ứng dụng → Chrome (hoặc trình duyệt bạn dùng) → Quyền → Camera → Cho phép. Sau đó tải lại trang.' };
+        if (laIOS()) return { tieuDe: 'Camera đang bị chặn', chiTiet: 'Bấm "aA" ở thanh địa chỉ → Cài đặt trang web → Camera → Hỏi hoặc Cho phép. Nếu không có mục đó: Cài đặt → Safari → Camera → Hỏi. Sau đó tải lại trang.' };
+        return { tieuDe: 'Camera đang bị chặn cho trang này', chiTiet: 'Bấm biểu tượng bên trái địa chỉ trang (ổ khóa hoặc ⚙) → Quyền → Camera → Cho phép, rồi tải lại trang. Nếu không thấy, vào Cài đặt → Ứng dụng → Chrome → Quyền → Camera → Cho phép.' };
+      }
+      if (/NotFound|DevicesNotFound|not found/i.test(chuoi)) return { tieuDe: 'Không tìm thấy camera', chiTiet: 'Thiết bị này không có camera (ví dụ máy tính bàn) hoặc camera đang bị tắt. Hãy mở trang trên điện thoại.' };
+      if (/NotReadable|TrackStart|Could not start|AbortError/i.test(chuoi)) return { tieuDe: 'Camera đang bị ứng dụng khác dùng', chiTiet: 'Hãy đóng các ứng dụng đang dùng camera (Camera, Zalo, gọi video…) rồi bấm Bật camera lại. Nếu vẫn lỗi, khởi động lại điện thoại.' };
+      if (/Overconstrained/i.test(chuoi)) return { tieuDe: 'Camera không hỗ trợ cấu hình', chiTiet: 'Hãy chọn camera khác trong danh sách hoặc dùng nút Chụp ảnh thẻ.' };
+      return { tieuDe: 'Không mở được camera', chiTiet: 'Hãy chụp màn hình này gửi người phụ trách, trong lúc đó dùng nút Chụp ảnh thẻ.' };
+    }
+
+    function layBoDocQR() {
+      if (TT.boDoc !== null) return Promise.resolve(TT.boDoc);
+      if (!('BarcodeDetector' in window)) { TT.boDoc = false; return Promise.resolve(false); }
+      return Promise.resolve(BarcodeDetector.getSupportedFormats ? BarcodeDetector.getSupportedFormats() : ['qr_code'])
+        .then(function(ds) { TT.boDoc = ds.indexOf('qr_code') >= 0 ? new BarcodeDetector({ formats: ['qr_code'] }) : false; return TT.boDoc; })
+        .catch(function() { TT.boDoc = false; return false; });
+    }
+
+    function docBangJsQR(nguon, rong, cao, cat) {
+      if (typeof jsQR !== 'function') return '';
+      if (!TT.canvas) TT.canvas = document.createElement('canvas');
+      const canh = cat ? Math.min(rong, cao) * 0.8 : 0;
+      const sx = cat ? (rong - canh) / 2 : 0, sy = cat ? (cao - canh) / 2 : 0;
+      const sw = cat ? canh : rong, sh = cat ? canh : cao;
+      const tiLe = Math.min(1, (cat ? 480 : 1000) / Math.max(sw, sh));
+      const w = Math.max(1, Math.round(sw * tiLe)), h = Math.max(1, Math.round(sh * tiLe));
+      TT.canvas.width = w; TT.canvas.height = h;
+      const ctx = TT.canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(nguon, sx, sy, sw, sh, 0, 0, w, h);
+      const anh = ctx.getImageData(0, 0, w, h);
+      const kq = jsQR(anh.data, w, h, { inversionAttempts: cat ? 'dontInvert' : 'attemptBoth' });
+      return kq && kq.data ? kq.data : '';
+    }
+
+    async function docMaTuNguon(nguon, rong, cao, cat) {
+      const boDoc = await layBoDocQR();
+      if (boDoc) {
+        try {
+          const ds = await boDoc.detect(nguon);
+          if (ds && ds.length && ds[0].rawValue) return ds[0].rawValue;
+          if (cat) return '';
+        } catch (e) {
+          TT.boDoc = false;
+        }
+      }
+      return docBangJsQR(nguon, rong, cao, cat);
+    }
+
+    async function moLuongCamera(maCamera) {
+      if (!window.isSecureContext) throw { name: 'SecureContextError' };
+      if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) throw { name: 'NotSupportedError', message: 'mediaDevices' };
+      const cacCach = [];
+      if (maCamera) cacCach.push({ deviceId: { exact: maCamera } });
+      cacCach.push({ facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } });
+      cacCach.push({ facingMode: 'environment' });
+      cacCach.push(true);
+      let loi = null;
+      for (let i = 0; i < cacCach.length; i++) {
+        try {
+          return await navigator.mediaDevices.getUserMedia({ video: cacCach[i], audio: false });
+        } catch (e) {
+          loi = e;
+          if (/NotAllowed|Security|Permission/i.test(moTaLoi(e))) break;
+        }
+      }
+      throw loi;
+    }
+
+    function vongQuet() {
+      if (!TT.dangBat) return;
+      const v = $('videoCamera');
+      const tiep = function() { if (TT.dangBat) TT.hen = setTimeout(vongQuet, 110); };
+      if (TT.dangGui || v.readyState < 2 || !v.videoWidth) { tiep(); return; }
+      docMaTuNguon(v, v.videoWidth, v.videoHeight, true)
+        .then(function(ma) { if (ma && TT.dangBat) xuLyMa(ma); })
+        .catch(function() { return null; })
+        .then(tiep);
     }
 
     async function batCamera(maCamera) {
-      if (typeof Html5Qrcode === 'undefined') {
-        hienKetQua('loi-kq', '⚠️', 'Chưa tải được bộ quét', 'Kiểm tra mạng rồi tải lại trang. Trong lúc chờ, có thể nhập mã bằng tay.');
-        return;
-      }
-      if (!TT.mayQuet) {
-        TT.mayQuet = new Html5Qrcode('vungCamera', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false });
-      }
       const nut = $('nutCamera');
       nut.disabled = true; nut.textContent = 'Đang mở camera...';
+      hienKetQua('cho', '📷', 'Đang mở camera...', 'Nếu điện thoại hỏi quyền camera, hãy bấm Cho phép');
       try {
-        await TT.mayQuet.start(maCamera ? { deviceId: { exact: maCamera } } : { facingMode: 'environment' }, cauHinhQuet(), function(ma) { xuLyMa(ma); }, function() { return null; });
+        const luong = await moLuongCamera(maCamera);
+        TT.luong = luong;
+        const v = $('videoCamera');
+        v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.muted = true;
+        v.srcObject = luong;
+        v.classList.remove('an'); $('khungNgam').classList.remove('an'); $('goiYCamera').classList.add('an');
+        try { await v.play(); } catch (e) { v.controls = false; }
         TT.dangBat = true;
         nut.className = 'nut nut-vien'; nut.textContent = '⏹ Tắt camera';
-        hienKetQua('cho', '📷', 'Đang quét...', 'Đưa thẻ học viên vào khung');
+        hienKetQua('cho', '📷', 'Đang quét...', 'Đưa mã QR trên thẻ vào trong khung trắng');
+        vongQuet();
         napDanhSachCamera();
       } catch (e) {
-        TT.dangBat = false;
-        nut.className = 'nut nut-xanh'; nut.textContent = '📷 Bật camera';
-        const tuChoi = /Permission|NotAllowed/i.test(String(e && (e.name || e.message || e)));
-        hienKetQua('loi-kq', '🚫', tuChoi ? 'Chưa cấp quyền camera' : 'Không mở được camera', tuChoi ? 'Bấm biểu tượng ổ khóa trên thanh địa chỉ, cho phép Camera rồi bấm Bật camera lại.' : String(e && (e.message || e)));
+        await tatCamera();
+        const giaiThich = giaiThichLoiCamera(e);
+        phatAm('loi');
+        hienKetQua('loi-kq', '🚫', giaiThich.tieuDe, giaiThich.chiTiet, 'Mã lỗi: ' + moTaLoi(e));
       } finally {
         nut.disabled = false;
       }
     }
 
-    async function tatCamera() {
-      if (TT.mayQuet && TT.dangBat) {
-        try { await TT.mayQuet.stop(); } catch (e) { TT.dangBat = false; }
+    function taiAnh(tep) {
+      return new Promise(function(xong, loi) {
+        const url = URL.createObjectURL(tep);
+        const img = new Image();
+        img.onload = function() { xong({ img: img, url: url }); };
+        img.onerror = function() { URL.revokeObjectURL(url); loi(new Error('Không mở được ảnh')); };
+        img.src = url;
+      });
+    }
+
+    async function quetTuAnh(input) {
+      const tep = input.files && input.files[0];
+      input.value = '';
+      if (!tep) return;
+      await tatCamera();
+      hienKetQua('cho', '🔍', 'Đang đọc mã trong ảnh...', '');
+      let ma = '';
+      try {
+        const a = await taiAnh(tep);
+        const w = a.img.naturalWidth, h = a.img.naturalHeight;
+        ma = await docMaTuNguon(a.img, w, h, false);
+        if (!ma) ma = docBangJsQR(a.img, w, h, true);
+        URL.revokeObjectURL(a.url);
+      } catch (e) {
+        ma = '';
       }
+      if (ma) { TT.maGanNhat = ''; xuLyMa(ma); return; }
+      phatAm('loi');
+      hienKetQua('loi-kq', '⚠️', 'Không đọc được mã trong ảnh', 'Chụp gần thẻ hơn, đủ sáng, giữ thẳng; hoặc nhập mã bên dưới.');
+    }
+
+    async function tatCamera() {
       TT.dangBat = false;
+      clearTimeout(TT.hen);
+      if (TT.luong) { TT.luong.getTracks().forEach(function(t) { try { t.stop(); } catch (e) { return; } }); TT.luong = null; }
+      const v = $('videoCamera');
+      try { v.pause(); } catch (e) { v.controls = false; }
+      v.srcObject = null;
+      v.classList.add('an'); $('khungNgam').classList.add('an'); $('goiYCamera').classList.remove('an');
       const nut = $('nutCamera');
       nut.className = 'nut nut-xanh'; nut.textContent = '📷 Bật camera';
     }
@@ -349,17 +494,17 @@
     }
 
     async function napDanhSachCamera() {
+      const sel = $('selCamera');
       try {
-        const ds = await Html5Qrcode.getCameras();
-        const sel = $('selCamera');
-        if (!ds || ds.length < 2) { sel.classList.add('an'); return; }
-        const giaTri = sel.value;
+        const ds = (await navigator.mediaDevices.enumerateDevices()).filter(function(d) { return d.kind === 'videoinput'; });
+        if (ds.length < 2) { sel.classList.add('an'); return; }
+        const dangDung = TT.luong && TT.luong.getVideoTracks()[0] ? (TT.luong.getVideoTracks()[0].getSettings().deviceId || '') : '';
         sel.innerHTML = '';
-        ds.forEach(function(c, i) { const o = document.createElement('option'); o.value = c.id; o.textContent = c.label || ('Camera ' + (i + 1)); sel.appendChild(o); });
-        if (giaTri) sel.value = giaTri;
+        ds.forEach(function(c, i) { const o = document.createElement('option'); o.value = c.deviceId; o.textContent = c.label || ('Camera ' + (i + 1)); sel.appendChild(o); });
+        if (dangDung) sel.value = dangDung;
         sel.classList.remove('an');
       } catch (e) {
-        $('selCamera').classList.add('an');
+        sel.classList.add('an');
       }
     }
 
