@@ -20,7 +20,8 @@
     header { position: sticky; top: 0; z-index: 10; background: linear-gradient(135deg, var(--chinh-dam), var(--chinh)); color: #fff; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     header h1 { font-size: 1.05rem; font-weight: 800; line-height: 1.2; }
     header p { font-size: 0.78rem; opacity: 0.9; }
-    .nut-nho { background: rgba(255,255,255,0.18); color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
+    .nut-nho { background: rgba(255,255,255,0.18); color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; font-size: 0.85rem; font-weight: 700; cursor: pointer; text-decoration: none; white-space: nowrap; }
+    .nhom-nut-dau { display: flex; gap: 6px; flex-shrink: 0; }
     main { width: 100%; max-width: 520px; margin: 0 auto; padding: 14px 16px 24px; }
     .the { background: var(--the); border: 1px solid var(--vien); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
     .the h2 { font-size: 1.05rem; margin-bottom: 6px; color: var(--chinh); }
@@ -84,7 +85,10 @@
       <h1>Trạm quét QR điểm danh</h1>
       <p id="txtGiaoXu">Faith Formation</p>
     </div>
-    <button type="button" id="nutDangXuat" class="nut-nho an" onclick="dangXuat()">Đăng xuất</button>
+    <div class="nhom-nut-dau">
+      <a id="lnkVeQuanLy" class="nut-nho an" href="#" target="_self">↩ Quản lý</a>
+      <button type="button" id="nutDangXuat" class="nut-nho an" onclick="dangXuat()">Đăng xuất</button>
+    </div>
   </header>
 
   <main>
@@ -182,6 +186,9 @@
     function hienMan(ten) {
       ['manCaiDat', 'manDangNhap', 'manQuet'].forEach(function(m) { $(m).classList.toggle('an', m !== ten); });
       $('nutDangXuat').classList.toggle('an', ten !== 'manQuet');
+      const veQuanLy = $('lnkVeQuanLy');
+      if (MAU_LINK_API.test(TT.api)) veQuanLy.href = TT.api;
+      veQuanLy.classList.toggle('an', ten === 'manCaiDat' || !MAU_LINK_API.test(TT.api));
     }
 
     function baoLoi(id, thongBao) {
@@ -900,10 +907,34 @@
       const thamSo = new URLSearchParams(location.search);
       const apiTuLink = (thamSo.get('api') || '').trim();
       if (MAU_LINK_API.test(apiTuLink)) ghiLT(KHOA_API, apiTuLink);
+      const khopMaChuyen = location.hash.match(/(?:^#|&)ma=([a-f0-9]{40})(?:&|$)/i);
+      if (location.hash || location.search) {
+        try { history.replaceState(null, '', location.pathname); } catch (e) { location.hash = ''; }
+      }
       TT.api = docLT(KHOA_API);
       TT.token = docLT(KHOA_TOKEN);
       TT.ten = docLT(KHOA_TEN);
       if (!MAU_LINK_API.test(TT.api)) { moCaiDat(); return; }
+      if (khopMaChuyen) {
+        hienMan('manDangNhap');
+        baoLoi('loiDangNhap', '');
+        $('nutDangNhap').disabled = true; $('nutDangNhap').textContent = 'Đang mở từ trang quản lý...';
+        let thongBaoLoi = '';
+        try {
+          const kqChuyen = await goiApi({ hanhDong: 'doiMaChuyen', ma: khopMaChuyen[1] });
+          if (kqChuyen.thanhCong && kqChuyen.phien) {
+            TT.token = kqChuyen.phien.token;
+            TT.ten = [kqChuyen.phien.tenThanh, kqChuyen.phien.hoTen].filter(Boolean).join(' ');
+            ghiLT(KHOA_TOKEN, TT.token); ghiLT(KHOA_TEN, TT.ten);
+          } else {
+            thongBaoLoi = kqChuyen.thongBao || 'Không mở được phiên từ trang quản lý.';
+          }
+        } catch (e) {
+          thongBaoLoi = e.message;
+        }
+        $('nutDangNhap').disabled = false; $('nutDangNhap').textContent = 'Đăng nhập';
+        if (thongBaoLoi && !TT.token) { baoLoi('loiDangNhap', thongBaoLoi); return; }
+      }
       if (!TT.token) { hienMan('manDangNhap'); return; }
       vaoManQuet();
       try {
