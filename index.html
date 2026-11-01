@@ -36,6 +36,11 @@
     .an { display: none !important; }
     #vungCamera { position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: 14px; overflow: hidden; background: #000; }
     #vungCamera video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    #vungCamera video.guong { transform: scaleX(-1); }
+    .trang-thai-hang { font-size: 0.85rem; font-weight: 700; text-align: center; padding: 8px 12px; border-radius: 10px; margin: -6px 0 14px; background: var(--the); border: 1px solid var(--vien); }
+    .trang-thai-hang.dang-gui { color: var(--chinh); }
+    .trang-thai-hang.mat-mang { color: var(--do); border-color: var(--do); }
+    ul.lich-su .cho { color: var(--chinh); font-weight: 700; }
     #vungCamera .khung-ngam { position: absolute; left: 14%; top: 14%; width: 72%; height: 72%; border: 3px solid rgba(255,255,255,0.9); border-radius: 18px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.28); pointer-events: none; }
     #vungCamera .goi-y { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 0.95rem; text-align: center; padding: 20px; }
     .ma-loi { font-size: 0.75rem; opacity: 0.85; margin-top: 8px; font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
@@ -120,6 +125,7 @@
         <div class="ten">Sẵn sàng quét</div>
         <div class="phu">Bấm "Bật camera" rồi đưa thẻ vào khung</div>
       </div>
+      <div id="trangThaiHang" class="trang-thai-hang an"></div>
 
       <div class="the">
         <div id="vungCamera">
@@ -127,9 +133,9 @@
           <video id="videoCamera" class="an" playsinline muted autoplay></video>
           <div class="khung-ngam an" id="khungNgam"></div>
         </div>
-        <select id="selCamera" class="an" style="margin-top:10px;" onchange="doiCamera()"></select>
         <button type="button" id="nutCamera" class="nut nut-xanh" onclick="batTatCamera()">📷 Bật camera</button>
-        <p class="chu-nho">Giữ thẻ cách camera khoảng 15–25 cm, đủ sáng. Mỗi em chỉ cần đưa thẻ qua một lần.</p>
+        <button type="button" id="nutDoiCamera" class="nut nut-vien an" onclick="doiCamera()">🔄 Đổi sang camera trước</button>
+        <p class="chu-nho">Giữ thẻ cách camera khoảng 15–25 cm, đủ sáng. Nghe "tít" là quét em tiếp theo được ngay.<br><span id="txtBoDoc"></span></p>
       </div>
 
       <div class="the">
@@ -151,9 +157,22 @@
     const KHOA_TOKEN = 'FF_TRAM_TOKEN';
     const KHOA_TEN = 'FF_TRAM_TEN';
     const MAU_LINK_API = /^https:\/\/script\.google\.com\/(a\/[^\/]+\/)?macros\/s\/[A-Za-z0-9_-]+\/exec$/;
-    const THOI_GIAN_CHONG_TRUNG_MS = 5000;
 
-    const TT = { api: '', token: '', ten: '', dsLich: [], maLich: '', thongBaoLich: '', henLich: 0, luong: null, hen: 0, boDoc: null, canvas: null, dangBat: false, dangGui: false, maGanNhat: '', luc: 0, soLuot: 0, lichSu: [], amThanh: null };
+    const KHOA_HANG_CHO = 'FF_TRAM_HANG_CHO';
+    const KHOA_CAM_SAU = 'FF_TRAM_CAM_SAU';
+    const URL_ZXING = 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.5/dist/iife/reader/index.js';
+    const SO_MA_MOI_LO = 20;
+    const THOI_GIAN_IM_LANG_MS = 3000;
+    const THOI_GIAN_BAO_TRUNG_MS = 4000;
+    const THOI_GIAN_CHO_QUET_LAI_LOI_MS = 8000;
+
+    const TT = {
+      api: '', token: '', ten: '', dsLich: [], maLich: '', thongBaoLich: '', henLich: 0,
+      luong: null, hen: 0, dangBat: false, dangGiaiMa: false, huongCam: 'sau', coCamTruoc: false,
+      boGiaiMa: '', boDoc: null, worker: null, choWorker: {}, soYeuCau: 0, canvas: null,
+      hangCho: [], dangGuiLo: false, henGui: 0, soLanThuLai: 0, loiGuiGanNhat: '', cheDoCu: false, daNhan: {}, soMuc: 0, mucMoiNhat: 0,
+      maGanNhat: '', luc: 0, soLuot: 0, lichSu: [], amThanh: null
+    };
 
     function docLT(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
     function ghiLT(k, v) { try { localStorage.setItem(k, v); } catch (e) { return; } }
@@ -223,7 +242,9 @@
       const ungDung = layTenUngDungNhung();
       if (ungDung) { $('txtTenUngDung').textContent = ungDung; $('canhBaoTrinhDuyet').classList.remove('an'); }
       hienMan('manQuet');
+      docHangCho();
       taiLichDangMo();
+      guiHangCho();
       clearInterval(TT.henLich);
       TT.henLich = setInterval(function() { if (!document.hidden && TT.token) taiLichDangMo(); }, 60000);
     }
@@ -287,7 +308,9 @@
     }
 
     async function dangXuat() {
+      if (TT.hangCho.length && !confirm('Còn ' + TT.hangCho.length + ' mã chưa gửi lên máy chủ. Vẫn đăng xuất? (Các mã này sẽ được gửi khi đăng nhập lại.)')) return;
       await tatCamera();
+      clearTimeout(TT.henGui); TT.henGui = 0;
       clearInterval(TT.henLich);
       const token = TT.token;
       TT.token = ''; xoaLT(KHOA_TOKEN); xoaLT(KHOA_TEN);
@@ -300,14 +323,14 @@
         if (!TT.amThanh) TT.amThanh = new (window.AudioContext || window.webkitAudioContext)();
         const ctx = TT.amThanh, osc = ctx.createOscillator(), gain = ctx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(loai === 'ok' ? 1046 : (loai === 'trung' ? 660 : 220), ctx.currentTime);
+        osc.frequency.setValueAtTime(loai === 'nhan' ? 1320 : (loai === 'ok' ? 1046 : (loai === 'trung' ? 660 : 220)), ctx.currentTime);
         gain.gain.setValueAtTime(0.18, ctx.currentTime);
         osc.connect(gain); gain.connect(ctx.destination);
-        osc.start(); osc.stop(ctx.currentTime + (loai === 'loi' ? 0.35 : 0.12));
+        osc.start(); osc.stop(ctx.currentTime + (loai === 'loi' ? 0.35 : (loai === 'nhan' ? 0.07 : 0.12)));
       } catch (e) {
         TT.amThanh = null;
       }
-      if (navigator.vibrate) navigator.vibrate(loai === 'ok' ? 80 : [80, 60, 80]);
+      if (navigator.vibrate) navigator.vibrate(loai === 'nhan' ? 40 : (loai === 'ok' ? 80 : [80, 60, 80]));
     }
 
     function hienKetQua(loai, bieuTuong, ten, phu, maLoi) {
@@ -319,18 +342,24 @@
       });
     }
 
-    function themLichSu(loai, ten, ghiChu) {
-      const now = new Date();
-      TT.lichSu.unshift({ loai: loai, ten: ten, ghiChu: ghiChu, gio: ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2) });
-      TT.lichSu = TT.lichSu.slice(0, 30);
+    function gioHienThi(ms) {
+      const d = new Date(ms);
+      return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2);
+    }
+
+    function veLichSu() {
       const ul = $('dsLichSu');
       ul.innerHTML = '';
+      if (TT.lichSu.length === 0) {
+        const li = document.createElement('li'); const sp = document.createElement('span'); sp.className = 'tg'; sp.textContent = 'Chưa có lượt quét nào.'; li.appendChild(sp); ul.appendChild(li);
+        return;
+      }
       TT.lichSu.forEach(function(m) {
         const li = document.createElement('li');
         const trai = document.createElement('span');
         const nhan = document.createElement('span');
-        nhan.className = m.loai === 'ok' ? 'ok' : (m.loai === 'trung' ? 'tr' : 'x');
-        nhan.textContent = m.loai === 'ok' ? '✓ ' : (m.loai === 'trung' ? '• ' : '✗ ');
+        nhan.className = { ok: 'ok', trung: 'tr', cho: 'cho', loi: 'x' }[m.loai] || 'x';
+        nhan.textContent = { ok: '✓ ', trung: '• ', cho: '⏳ ', loi: '✗ ' }[m.loai] || '✗ ';
         trai.appendChild(nhan);
         trai.appendChild(document.createTextNode(m.ten + (m.ghiChu ? ' – ' + m.ghiChu : '')));
         const phai = document.createElement('span'); phai.className = 'tg'; phai.textContent = m.gio;
@@ -338,59 +367,188 @@
       });
     }
 
-    async function xuLyMa(ma) {
+    function themLichSu(loai, ten, ghiChu, id, luc) {
+      TT.lichSu.unshift({ id: id || 0, loai: loai, ten: ten, ghiChu: ghiChu, gio: gioHienThi(luc || Date.now()) });
+      TT.lichSu = TT.lichSu.slice(0, 40);
+      veLichSu();
+    }
+
+    function capNhatLichSu(id, loai, ten, ghiChu) {
+      const m = TT.lichSu.find(function(x) { return x.id === id; });
+      if (!m) { themLichSu(loai, ten, ghiChu); return; }
+      m.loai = loai; m.ten = ten; m.ghiChu = ghiChu;
+      veLichSu();
+    }
+
+    function layMaTNTuChuoi(ma) {
+      let chuoi = String(ma || '').trim();
+      const khop = chuoi.match(/[?&]quet=([^&#\s]+)/i);
+      if (khop) { try { chuoi = decodeURIComponent(khop[1]); } catch (e) { chuoi = khop[1]; } }
+      return chuoi.trim().toUpperCase().split('-')[0].trim();
+    }
+
+    function luuHangCho() {
+      ghiLT(KHOA_HANG_CHO, JSON.stringify(TT.hangCho.map(function(m) { return { id: m.id, ma: m.ma, maTN: m.maTN, maLich: m.maLich, luc: m.luc }; })));
+    }
+
+    function docHangCho() {
+      let ds = [];
+      try { ds = JSON.parse(docLT(KHOA_HANG_CHO) || '[]'); } catch (e) { ds = []; }
+      if (!Array.isArray(ds)) ds = [];
+      ds = ds.filter(function(m) { return m && m.ma && m.luc && Date.now() - m.luc < 24 * 3600 * 1000; });
+      TT.hangCho = ds;
+      ds.forEach(function(m) {
+        TT.soMuc = Math.max(TT.soMuc, Number(m.id) || 0);
+        TT.daNhan[(m.maLich || '') + '|' + m.maTN] = { trangThai: 'cho', luc: m.luc, id: m.id };
+        if (!TT.lichSu.some(function(x) { return x.id === m.id; })) themLichSu('cho', m.maTN, 'chờ gửi', m.id, m.luc);
+      });
+      capNhatTrangThaiHang('');
+    }
+
+    function capNhatTrangThaiHang(thongBaoLoiMoi) {
+      const o = $('trangThaiHang');
+      const so = TT.hangCho.length;
+      const thongBaoLoi = thongBaoLoiMoi || (TT.henGui ? TT.loiGuiGanNhat : '');
+      if (!so) { o.className = 'trang-thai-hang an'; o.textContent = ''; return; }
+      if (thongBaoLoi) { o.className = 'trang-thai-hang mat-mang'; o.textContent = '📡 ' + thongBaoLoi + ' – còn ' + so + ' mã chờ gửi, sẽ tự gửi lại.'; return; }
+      o.className = 'trang-thai-hang dang-gui';
+      o.textContent = '⏫ Đang gửi ' + so + ' mã lên máy chủ...';
+    }
+
+    function nhanMa(ma, nguon) {
       const maSach = String(ma || '').trim();
-      if (!maSach || TT.dangGui) return;
+      if (!maSach) return;
+      const bayGio = Date.now();
       if (!TT.maLich && TT.dsLich.length > 1) {
-        if (maSach !== TT.maGanNhat || Date.now() - TT.luc >= THOI_GIAN_CHONG_TRUNG_MS) { TT.maGanNhat = maSach; TT.luc = Date.now(); phatAm('loi'); hienKetQua('canh-bao', '🗓️', 'Chưa chọn lịch', 'Có nhiều lịch cùng giờ, hãy chọn lịch ở phía trên rồi quét lại.'); }
+        if (maSach !== TT.maGanNhat || bayGio - TT.luc >= THOI_GIAN_BAO_TRUNG_MS) {
+          TT.maGanNhat = maSach; TT.luc = bayGio;
+          phatAm('loi');
+          hienKetQua('canh-bao', '🗓️', 'Chưa chọn lịch', 'Có nhiều lịch cùng giờ, hãy chọn lịch ở phía trên rồi quét lại.');
+        }
         return;
       }
-      const bayGio = Date.now();
-      if (maSach === TT.maGanNhat && bayGio - TT.luc < THOI_GIAN_CHONG_TRUNG_MS) return;
-      TT.maGanNhat = maSach; TT.luc = bayGio; TT.dangGui = true;
-      hienKetQua('cho', '⏳', 'Đang ghi nhận...', maSach);
-      try {
-        const kq = await goiApi({ hanhDong: 'quet', token: TT.token, ma: maSach, maLich: TT.maLich });
-        if (kq.lich) {
-          const viTri = TT.dsLich.findIndex(function(x) { return x.maLich === kq.lich.maLich; });
-          if (viTri >= 0) { TT.dsLich[viTri] = kq.lich; veTheLich(); }
-        }
-        if (kq.thanhCong) {
-          const hv = kq.hocVien || {};
-          TT.soLuot = kq.soEmDaQuetTrongBuoi || (TT.soLuot + 1);
-          $('txtDem').textContent = TT.soLuot;
-          phatAm('ok');
-          const laTre = kq.trangThai === 'Đi trễ';
-          hienKetQua(laTre ? 'canh-bao' : 'thanh-cong', laTre ? '⏰' : '✅', hv.hoTenDayDu || maSach, (hv.tenLop || '') + ' – ' + (kq.trangThai || 'Có mặt') + ' lúc ' + (kq.thoiGian || ''));
-          themLichSu('ok', hv.hoTenDayDu || maSach, (hv.tenLop || '') + (laTre ? ' · Đi trễ' : ''));
-        } else if (kq.maLoi === 'HET_PHIEN' || /Phiên đăng nhập/i.test(kq.thongBao || '')) {
-          phatAm('loi');
-          await tatCamera();
-          TT.token = ''; xoaLT(KHOA_TOKEN);
-          baoLoi('loiDangNhap', 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.');
-          hienMan('manDangNhap');
-        } else if (kq.maLoi === 'NGOAI_GIO' || kq.maLoi === 'CHON_LICH') {
-          phatAm('loi');
-          TT.maGanNhat = '';
-          capNhatDanhSachLich(kq.danhSachLich, kq.maLoi === 'NGOAI_GIO' ? kq.thongBao : '');
-          hienKetQua(kq.maLoi === 'CHON_LICH' ? 'canh-bao' : 'loi-kq', '🗓️', kq.maLoi === 'CHON_LICH' ? 'Chưa chọn lịch' : 'Ngoài giờ điểm danh', kq.thongBao || '');
-        } else if (kq.maLoi === 'QUET_TRUNG') {
-          phatAm('trung');
-          hienKetQua('canh-bao', 'ℹ️', 'Đã điểm danh rồi', kq.thongBao || '');
-          themLichSu('trung', maSach, 'đã điểm danh');
-        } else {
-          phatAm('loi');
-          hienKetQua('loi-kq', '⚠️', 'Chưa ghi nhận được', kq.thongBao || 'Lỗi không xác định.');
-          themLichSu('loi', maSach, kq.thongBao || 'lỗi');
-        }
-      } catch (e) {
-        phatAm('loi');
-        TT.maGanNhat = '';
-        hienKetQua('loi-kq', '📡', 'Lỗi kết nối', e.message);
-        themLichSu('loi', maSach, 'lỗi kết nối – quét lại');
-      } finally {
-        TT.dangGui = false;
+      const maTN = layMaTNTuChuoi(maSach);
+      if (!maTN) return;
+      const khoa = (TT.maLich || '') + '|' + maTN;
+      const cu = TT.daNhan[khoa];
+      if (cu && !(cu.trangThai === 'loi' && bayGio - cu.luc >= THOI_GIAN_CHO_QUET_LAI_LOI_MS)) {
+        if (nguon !== 'tay' && bayGio - cu.luc < THOI_GIAN_IM_LANG_MS) return;
+        if (nguon !== 'tay' && bayGio - (cu.lanBao || 0) < THOI_GIAN_BAO_TRUNG_MS) return;
+        cu.lanBao = bayGio;
+        phatAm('trung');
+        hienKetQua('canh-bao', 'ℹ️', cu.ten || maTN, cu.trangThai === 'cho' ? 'Đã nhận, đang chờ gửi lên máy chủ.' : (cu.trangThai === 'loi' ? 'Vừa báo lỗi, đợi vài giây rồi quét lại.' : 'Em này đã được quét rồi.'));
+        return;
       }
+      TT.soMuc++;
+      const muc = { id: TT.soMuc, ma: maSach, maTN: maTN, maLich: TT.maLich || '', luc: bayGio };
+      TT.daNhan[khoa] = { trangThai: 'cho', luc: bayGio, id: muc.id };
+      TT.hangCho.push(muc);
+      TT.mucMoiNhat = muc.id;
+      luuHangCho();
+      phatAm('nhan');
+      hienKetQua('cho', '📥', maTN, TT.dsLich.length === 0 ? 'Đã nhận – đang kiểm tra lịch với máy chủ...' : 'Đã nhận – đang ghi vào sổ...');
+      themLichSu('cho', maTN, 'đang ghi', muc.id, bayGio);
+      capNhatTrangThaiHang('');
+      guiHangCho();
+    }
+
+    function xuLyHetPhien() {
+      tatCamera();
+      clearTimeout(TT.henGui); TT.henGui = 0;
+      TT.token = ''; xoaLT(KHOA_TOKEN);
+      baoLoi('loiDangNhap', 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.' + (TT.hangCho.length ? ' Còn ' + TT.hangCho.length + ' mã sẽ được gửi sau khi đăng nhập.' : ''));
+      hienMan('manDangNhap');
+    }
+
+    function xuLyKetQuaMuc(muc, kq) {
+      const khoa = muc.maLich + '|' + muc.maTN;
+      const laMoiNhat = muc.id === TT.mucMoiNhat;
+      if (kq.lich) {
+        const viTri = TT.dsLich.findIndex(function(x) { return x.maLich === kq.lich.maLich; });
+        if (viTri >= 0) { TT.dsLich[viTri] = kq.lich; veTheLich(); }
+      }
+      if (kq.thanhCong) {
+        const hv = kq.hocVien || {};
+        const ten = hv.hoTenDayDu || muc.maTN;
+        const laTre = kq.trangThai === 'Đi trễ';
+        TT.daNhan[khoa] = { trangThai: 'ok', luc: Date.now(), ten: ten };
+        TT.soLuot++;
+        $('txtDem').textContent = TT.soLuot;
+        capNhatLichSu(muc.id, 'ok', ten, (hv.tenLop || '') + ' · ' + (kq.trangThai || 'Có mặt') + (kq.thoiGian ? ' ' + kq.thoiGian : ''));
+        if (laMoiNhat) hienKetQua(laTre ? 'canh-bao' : 'thanh-cong', laTre ? '⏰' : '✅', ten, (hv.tenLop || '') + ' – ' + (kq.trangThai || 'Có mặt') + ' lúc ' + (kq.thoiGian || ''));
+        return;
+      }
+      if (kq.maLoi === 'QUET_TRUNG') {
+        TT.daNhan[khoa] = { trangThai: 'ok', luc: Date.now() };
+        capNhatLichSu(muc.id, 'trung', muc.maTN, 'đã điểm danh trước đó');
+        if (laMoiNhat) hienKetQua('canh-bao', 'ℹ️', 'Đã điểm danh rồi', kq.thongBao || '');
+        return;
+      }
+      TT.daNhan[khoa] = { trangThai: 'loi', luc: Date.now() };
+      phatAm('loi');
+      if (kq.maLoi === 'NGOAI_GIO' || kq.maLoi === 'CHON_LICH') {
+        capNhatDanhSachLich(kq.danhSachLich, kq.maLoi === 'NGOAI_GIO' ? kq.thongBao : '');
+        capNhatLichSu(muc.id, 'loi', muc.maTN, kq.maLoi === 'CHON_LICH' ? 'chưa chọn lịch' : 'ngoài giờ điểm danh');
+        hienKetQua(kq.maLoi === 'CHON_LICH' ? 'canh-bao' : 'loi-kq', '🗓️', kq.maLoi === 'CHON_LICH' ? 'Chưa chọn lịch' : 'Ngoài giờ điểm danh', kq.thongBao || '');
+        return;
+      }
+      capNhatLichSu(muc.id, 'loi', muc.maTN, kq.thongBao || 'lỗi');
+      hienKetQua('loi-kq', '⚠️', 'Chưa ghi nhận ' + muc.maTN, kq.thongBao || 'Lỗi không xác định.');
+    }
+
+    function henGuiLai(thongBao) {
+      TT.soLanThuLai++;
+      const cho = Math.min(15000, 2000 * TT.soLanThuLai);
+      TT.loiGuiGanNhat = thongBao;
+      clearTimeout(TT.henGui);
+      TT.henGui = setTimeout(function() { TT.henGui = 0; guiHangCho(); }, cho);
+      capNhatTrangThaiHang(thongBao);
+    }
+
+    async function guiTungMaCheDoCu(lo) {
+      for (let k = 0; k < lo.length; k++) {
+        const kq = await goiApi({ hanhDong: 'quet', token: TT.token, ma: lo[k].ma, maLich: lo[k].maLich });
+        if (kq.maLoi === 'HET_PHIEN' || /Phiên đăng nhập/i.test(kq.thongBao || '')) return { hetPhien: true };
+        if (kq.maLoi === 'LOI_HE_THONG') throw new Error(kq.thongBao || 'Máy chủ bận');
+        TT.hangCho = TT.hangCho.filter(function(m) { return m.id !== lo[k].id; });
+        luuHangCho();
+        xuLyKetQuaMuc(lo[k], kq);
+      }
+      return {};
+    }
+
+    async function guiHangCho() {
+      if (TT.dangGuiLo || TT.henGui || !TT.token || TT.hangCho.length === 0) return;
+      const maLichLo = TT.hangCho[0].maLich;
+      const lo = TT.hangCho.filter(function(m) { return m.maLich === maLichLo; }).slice(0, SO_MA_MOI_LO);
+      TT.dangGuiLo = true;
+      capNhatTrangThaiHang('');
+      try {
+        if (TT.cheDoCu) {
+          const kqCu = await guiTungMaCheDoCu(lo);
+          if (kqCu.hetPhien) { TT.dangGuiLo = false; xuLyHetPhien(); return; }
+        } else {
+          const kq = await goiApi({ hanhDong: 'quetNhieu', token: TT.token, maLich: maLichLo, dsMa: lo.map(function(m) { return { ma: m.ma, luc: m.luc }; }) });
+          if (!Array.isArray(kq.ketQua)) {
+            if (kq.maLoi === 'HET_PHIEN' || /Phiên đăng nhập/i.test(kq.thongBao || '')) { TT.dangGuiLo = false; xuLyHetPhien(); return; }
+            if (/Hành động không hợp lệ/i.test(kq.thongBao || '')) { TT.cheDoCu = true; TT.dangGuiLo = false; guiHangCho(); return; }
+            throw new Error(kq.thongBao || 'Máy chủ đang bận');
+          }
+          const daGui = {};
+          lo.forEach(function(m) { daGui[m.id] = true; });
+          TT.hangCho = TT.hangCho.filter(function(m) { return !daGui[m.id]; });
+          luuHangCho();
+          kq.ketQua.forEach(function(r, k) { if (lo[k]) xuLyKetQuaMuc(lo[k], r); });
+        }
+        TT.soLanThuLai = 0;
+      } catch (e) {
+        TT.dangGuiLo = false;
+        henGuiLai(/kết nối|Failed|network/i.test(e.message || '') ? 'Mất kết nối' : (e.message || 'Lỗi máy chủ'));
+        return;
+      }
+      TT.dangGuiLo = false;
+      capNhatTrangThaiHang('');
+      if (TT.hangCho.length) guiHangCho();
     }
 
     function ghiNhanTay() {
@@ -398,8 +556,7 @@
       const ma = o.value.trim();
       if (!ma) return;
       o.value = '';
-      TT.maGanNhat = '';
-      xuLyMa(ma);
+      nhanMa(ma, 'tay');
     }
 
     function layTenUngDungNhung() {
@@ -434,55 +591,183 @@
       if (/NotSupported/i.test(chuoi)) return { tieuDe: 'Trình duyệt này không cho dùng camera', chiTiet: 'Hãy mở link bằng Chrome (Android) hoặc Safari (iPhone).' };
       if (/NotFound|DevicesNotFound|not found/i.test(chuoi)) return { tieuDe: 'Không tìm thấy camera', chiTiet: 'Thiết bị này không có camera (ví dụ máy tính bàn) hoặc camera đang bị tắt. Hãy mở trang trên điện thoại.' };
       if (/NotReadable|TrackStart|Could not start|AbortError/i.test(chuoi)) return { tieuDe: 'Camera đang bị ứng dụng khác dùng', chiTiet: 'Hãy đóng các ứng dụng đang dùng camera (Camera, Zalo, gọi video…) rồi bấm Bật camera lại. Nếu vẫn lỗi, khởi động lại điện thoại.' };
-      if (/Overconstrained/i.test(chuoi)) return { tieuDe: 'Camera không hỗ trợ cấu hình', chiTiet: 'Hãy chọn camera khác trong danh sách.' };
+      if (/Overconstrained/i.test(chuoi)) return { tieuDe: 'Camera không hỗ trợ cấu hình', chiTiet: 'Hãy bấm Bật camera lại hoặc đổi camera trước/sau.' };
       return { tieuDe: 'Không mở được camera', chiTiet: 'Hãy chụp màn hình này gửi người phụ trách, trong lúc đó có thể nhập mã bằng tay bên dưới.' };
     }
 
-    function layBoDocQR() {
-      if (TT.boDoc !== null) return Promise.resolve(TT.boDoc);
-      if (!('BarcodeDetector' in window)) { TT.boDoc = false; return Promise.resolve(false); }
+    function layBoDocNative() {
+      if (!('BarcodeDetector' in window)) return Promise.resolve(null);
       return Promise.resolve(BarcodeDetector.getSupportedFormats ? BarcodeDetector.getSupportedFormats() : ['qr_code'])
-        .then(function(ds) { TT.boDoc = ds.indexOf('qr_code') >= 0 ? new BarcodeDetector({ formats: ['qr_code'] }) : false; return TT.boDoc; })
-        .catch(function() { TT.boDoc = false; return false; });
+        .then(function(ds) { return ds.indexOf('qr_code') >= 0 ? new BarcodeDetector({ formats: ['qr_code'] }) : null; })
+        .catch(function() { return null; });
     }
 
-    function docBangJsQR(nguon, rong, cao, cat) {
-      if (typeof jsQR !== 'function') return '';
+    function taoWorkerZXing() {
+      return new Promise(function(xong, loi) {
+        let worker = null;
+        let daXong = false;
+        const ketThuc = function(thanhCong, giaTri) {
+          if (daXong) return;
+          daXong = true;
+          clearTimeout(hen);
+          if (thanhCong) xong(giaTri); else { if (worker) worker.terminate(); loi(giaTri); }
+        };
+        const hen = setTimeout(function() { ketThuc(false, new Error('ZXing tải quá lâu')); }, 12000);
+        try {
+          const ma = [
+            "importScripts('" + URL_ZXING + "');",
+            "var sanSang = ZXingWASM.prepareZXingModule({ fireImmediately: true });",
+            "var tuyChon = { formats: ['QRCode'], maxNumberOfSymbols: 1, tryHarder: true, tryRotate: false, tryInvert: false, tryDownscale: true };",
+            "sanSang.then(function() { self.postMessage({ sanSang: true }); }, function(e) { self.postMessage({ loiTai: String(e && e.message || e) }); });",
+            "self.onmessage = function(e) {",
+            "  var d = e.data;",
+            "  sanSang.then(function() { return ZXingWASM.readBarcodes(new ImageData(new Uint8ClampedArray(d.buf), d.w, d.h), tuyChon); })",
+            "    .then(function(kq) { self.postMessage({ id: d.id, text: kq && kq.length && kq[0].text ? kq[0].text : '' }); })",
+            "    .catch(function(err) { self.postMessage({ id: d.id, text: '', loi: String(err && err.message || err) }); });",
+            "};"
+          ].join('\n');
+          const url = URL.createObjectURL(new Blob([ma], { type: 'text/javascript' }));
+          worker = new Worker(url);
+          URL.revokeObjectURL(url);
+        } catch (e) {
+          ketThuc(false, e);
+          return;
+        }
+        worker.onerror = function(e) { ketThuc(false, new Error(e.message || 'Worker lỗi')); };
+        worker.onmessage = function(e) {
+          const d = e.data || {};
+          if (d.sanSang) { ketThuc(true, worker); return; }
+          if (d.loiTai) { ketThuc(false, new Error(d.loiTai)); return; }
+          const cho = TT.choWorker[d.id];
+          if (cho) { delete TT.choWorker[d.id]; cho(d.text || ''); }
+        };
+      });
+    }
+
+    async function chuanBiBoGiaiMa() {
+      if (TT.boGiaiMa) return;
+      const native = await layBoDocNative();
+      if (native) { TT.boDoc = native; TT.boGiaiMa = 'native'; $('txtBoDoc').textContent = 'Bộ đọc: có sẵn của điện thoại'; return; }
+      try {
+        TT.worker = await taoWorkerZXing();
+        TT.boGiaiMa = 'zxing';
+        $('txtBoDoc').textContent = 'Bộ đọc: ZXing';
+      } catch (e) {
+        TT.boGiaiMa = 'jsqr';
+        $('txtBoDoc').textContent = 'Bộ đọc: dự phòng';
+      }
+    }
+
+    function catKhungGiua(nguon, rong, cao, canhToiDa) {
       if (!TT.canvas) TT.canvas = document.createElement('canvas');
-      const canh = cat ? Math.min(rong, cao) * 0.8 : 0;
-      const sx = cat ? (rong - canh) / 2 : 0, sy = cat ? (cao - canh) / 2 : 0;
-      const sw = cat ? canh : rong, sh = cat ? canh : cao;
-      const tiLe = Math.min(1, (cat ? 480 : 1000) / Math.max(sw, sh));
-      const w = Math.max(1, Math.round(sw * tiLe)), h = Math.max(1, Math.round(sh * tiLe));
-      TT.canvas.width = w; TT.canvas.height = h;
+      const canh = Math.min(rong, cao) * 0.85;
+      const sx = (rong - canh) / 2, sy = (cao - canh) / 2;
+      const kt = Math.max(1, Math.round(Math.min(canh, canhToiDa)));
+      TT.canvas.width = kt; TT.canvas.height = kt;
       const ctx = TT.canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(nguon, sx, sy, sw, sh, 0, 0, w, h);
-      const anh = ctx.getImageData(0, 0, w, h);
-      const kq = jsQR(anh.data, w, h, { inversionAttempts: cat ? 'dontInvert' : 'attemptBoth' });
+      ctx.drawImage(nguon, sx, sy, canh, canh, 0, 0, kt, kt);
+      return ctx.getImageData(0, 0, kt, kt);
+    }
+
+    function docBangZXing(anh) {
+      return new Promise(function(xong) {
+        const id = ++TT.soYeuCau;
+        const hen = setTimeout(function() { if (TT.choWorker[id]) { delete TT.choWorker[id]; xong(''); } }, 2000);
+        TT.choWorker[id] = function(text) { clearTimeout(hen); xong(text); };
+        TT.worker.postMessage({ id: id, buf: anh.data.buffer, w: anh.width, h: anh.height }, [anh.data.buffer]);
+      });
+    }
+
+    async function giaiMaKhung(v) {
+      const rong = v.videoWidth, cao = v.videoHeight;
+      if (TT.boGiaiMa === 'native') {
+        try {
+          const ds = await TT.boDoc.detect(v);
+          return ds && ds.length && ds[0].rawValue ? ds[0].rawValue : '';
+        } catch (e) {
+          TT.boGiaiMa = ''; TT.boDoc = null;
+          await chuanBiBoGiaiMaKhongNative();
+          return '';
+        }
+      }
+      if (TT.boGiaiMa === 'zxing') return docBangZXing(catKhungGiua(v, rong, cao, 720));
+      if (typeof jsQR !== 'function') return '';
+      const anh = catKhungGiua(v, rong, cao, 480);
+      const kq = jsQR(anh.data, anh.width, anh.height, { inversionAttempts: 'dontInvert' });
       return kq && kq.data ? kq.data : '';
     }
 
-    async function docMaTuNguon(nguon, rong, cao, cat) {
-      const boDoc = await layBoDocQR();
-      if (boDoc) {
-        try {
-          const ds = await boDoc.detect(nguon);
-          if (ds && ds.length && ds[0].rawValue) return ds[0].rawValue;
-          if (cat) return '';
-        } catch (e) {
-          TT.boDoc = false;
-        }
+    async function chuanBiBoGiaiMaKhongNative() {
+      try {
+        TT.worker = await taoWorkerZXing();
+        TT.boGiaiMa = 'zxing';
+        $('txtBoDoc').textContent = 'Bộ đọc: ZXing';
+      } catch (e) {
+        TT.boGiaiMa = 'jsqr';
+        $('txtBoDoc').textContent = 'Bộ đọc: dự phòng';
       }
-      return docBangJsQR(nguon, rong, cao, cat);
     }
 
-    async function moLuongCamera(maCamera) {
+    function vongQuet() {
+      if (!TT.dangBat) return;
+      const v = $('videoCamera');
+      if (TT.dangGiaiMa || !TT.boGiaiMa || v.readyState < 2 || !v.videoWidth) { TT.hen = setTimeout(vongQuet, 60); return; }
+      TT.dangGiaiMa = true;
+      const batDau = Date.now();
+      giaiMaKhung(v)
+        .then(function(ma) { if (ma && TT.dangBat) nhanMa(ma, 'camera'); })
+        .catch(function() { return null; })
+        .then(function() {
+          TT.dangGiaiMa = false;
+          if (TT.dangBat) TT.hen = setTimeout(vongQuet, Math.max(15, 70 - (Date.now() - batDau)));
+        });
+    }
+
+    function boDauNhan(chuoi) {
+      return String(chuoi || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+    }
+
+    function phanLoaiCamera(ds) {
+      const ketQua = { sau: [], truoc: [] };
+      ds.forEach(function(c) {
+        const nhan = boDauNhan(c.label);
+        if (/front|user|truoc|selfie|facetime/.test(nhan)) ketQua.truoc.push(c); else ketQua.sau.push(c);
+      });
+      return ketQua;
+    }
+
+    function diemCameraSau(c) {
+      const nhan = boDauNhan(c.label);
+      let diem = 0;
+      if (/ultra|wide|rong|tele|macro|depth|zoom|0[.,]5|[23]x|infrared/.test(nhan)) diem += 100;
+      if (/^back camera$|^camera mat sau$|^rear camera$/.test(nhan.trim())) diem -= 50;
+      const so = nhan.match(/camera2?\s*(\d+)/) || nhan.match(/(\d+)/);
+      diem += so ? Math.min(Number(so[1]), 50) : 25;
+      return diem;
+    }
+
+    function chonCameraSauChinh(dsSau) {
+      if (!dsSau.length) return null;
+      return dsSau.slice().sort(function(a, b) { return diemCameraSau(a) - diemCameraSau(b); })[0];
+    }
+
+    async function layDanhSachCamera() {
+      try {
+        return (await navigator.mediaDevices.enumerateDevices()).filter(function(d) { return d.kind === 'videoinput'; });
+      } catch (e) {
+        return [];
+      }
+    }
+
+    async function moLuongCamera(huong) {
       if (!window.isSecureContext) throw { name: 'SecureContextError' };
       if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) throw { name: 'NotSupportedError', message: 'mediaDevices' };
+      const doPhanGiai = { width: { ideal: 1280 }, height: { ideal: 720 } };
       const cacCach = [];
-      if (maCamera) cacCach.push({ deviceId: { exact: maCamera } });
-      cacCach.push({ facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } });
-      cacCach.push({ facingMode: 'environment' });
+      const maDaLuu = huong === 'sau' ? docLT(KHOA_CAM_SAU) : '';
+      if (maDaLuu) cacCach.push(Object.assign({ deviceId: { exact: maDaLuu } }, doPhanGiai));
+      cacCach.push(Object.assign({ facingMode: { ideal: huong === 'truoc' ? 'user' : 'environment' } }, doPhanGiai));
+      cacCach.push({ facingMode: huong === 'truoc' ? 'user' : 'environment' });
       cacCach.push(true);
       let loi = null;
       for (let i = 0; i < cacCach.length; i++) {
@@ -490,40 +775,76 @@
           return await navigator.mediaDevices.getUserMedia({ video: cacCach[i], audio: false });
         } catch (e) {
           loi = e;
+          if (i === 0 && maDaLuu) xoaLT(KHOA_CAM_SAU);
           if (/NotAllowed|Security|Permission/i.test(moTaLoi(e))) break;
         }
       }
       throw loi;
     }
 
-    function vongQuet() {
-      if (!TT.dangBat) return;
-      const v = $('videoCamera');
-      const tiep = function() { if (TT.dangBat) TT.hen = setTimeout(vongQuet, 110); };
-      if (TT.dangGui || v.readyState < 2 || !v.videoWidth) { tiep(); return; }
-      docMaTuNguon(v, v.videoWidth, v.videoHeight, true)
-        .then(function(ma) { if (ma && TT.dangBat) xuLyMa(ma); })
-        .catch(function() { return null; })
-        .then(tiep);
+    function dungLuong(luong) {
+      if (luong) luong.getTracks().forEach(function(t) { try { t.stop(); } catch (e) { return; } });
     }
 
-    async function batCamera(maCamera) {
+    async function chonCameraChinhNeuCan(luong) {
+      const ds = await layDanhSachCamera();
+      const phan = phanLoaiCamera(ds);
+      TT.coCamTruoc = phan.truoc.length > 0 && phan.sau.length > 0;
+      if (TT.huongCam !== 'sau') return luong;
+      const track = luong.getVideoTracks()[0];
+      const dangDung = track && track.getSettings ? (track.getSettings().deviceId || '') : '';
+      const chinh = chonCameraSauChinh(phan.sau);
+      if (!chinh || !chinh.deviceId) return luong;
+      if (chinh.deviceId === dangDung) { ghiLT(KHOA_CAM_SAU, dangDung); return luong; }
+      try {
+        const moi = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: chinh.deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+        dungLuong(luong);
+        ghiLT(KHOA_CAM_SAU, chinh.deviceId);
+        return moi;
+      } catch (e) {
+        return luong;
+      }
+    }
+
+    function batLayNetLienTuc(luong) {
+      const track = luong.getVideoTracks()[0];
+      if (!track || !track.getCapabilities) return;
+      try {
+        const kn = track.getCapabilities();
+        if (kn.focusMode && kn.focusMode.indexOf('continuous') >= 0) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function() { return null; });
+      } catch (e) {
+        return;
+      }
+    }
+
+    function capNhatNutDoiCamera() {
+      const nut = $('nutDoiCamera');
+      nut.classList.toggle('an', !(TT.dangBat && TT.coCamTruoc));
+      nut.textContent = TT.huongCam === 'sau' ? '🔄 Đổi sang camera trước' : '🔄 Đổi sang camera sau';
+    }
+
+    async function batCamera() {
       const nut = $('nutCamera');
       nut.disabled = true; nut.textContent = 'Đang mở camera...';
       hienKetQua('cho', '📷', 'Đang mở camera...', 'Nếu điện thoại hỏi quyền camera, hãy bấm Cho phép');
+      const choBoGiaiMa = chuanBiBoGiaiMa();
       try {
-        const luong = await moLuongCamera(maCamera);
+        let luong = await moLuongCamera(TT.huongCam);
+        luong = await chonCameraChinhNeuCan(luong);
         TT.luong = luong;
+        batLayNetLienTuc(luong);
         const v = $('videoCamera');
         v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.muted = true;
+        v.classList.toggle('guong', TT.huongCam === 'truoc');
         v.srcObject = luong;
         v.classList.remove('an'); $('khungNgam').classList.remove('an'); $('goiYCamera').classList.add('an');
         try { await v.play(); } catch (e) { v.controls = false; }
         TT.dangBat = true;
         nut.className = 'nut nut-vien'; nut.textContent = '⏹ Tắt camera';
+        capNhatNutDoiCamera();
         hienKetQua('cho', '📷', 'Đang quét...', 'Đưa mã QR trên thẻ vào trong khung trắng');
+        await choBoGiaiMa;
         vongQuet();
-        napDanhSachCamera();
       } catch (e) {
         await tatCamera();
         const giaiThich = giaiThichLoiCamera(e);
@@ -537,13 +858,15 @@
     async function tatCamera() {
       TT.dangBat = false;
       clearTimeout(TT.hen);
-      if (TT.luong) { TT.luong.getTracks().forEach(function(t) { try { t.stop(); } catch (e) { return; } }); TT.luong = null; }
+      dungLuong(TT.luong);
+      TT.luong = null;
       const v = $('videoCamera');
       try { v.pause(); } catch (e) { v.controls = false; }
       v.srcObject = null;
       v.classList.add('an'); $('khungNgam').classList.add('an'); $('goiYCamera').classList.remove('an');
       const nut = $('nutCamera');
       nut.className = 'nut nut-xanh'; nut.textContent = '📷 Bật camera';
+      capNhatNutDoiCamera();
     }
 
     function batTatCamera() {
@@ -551,31 +874,23 @@
         try { TT.amThanh = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { TT.amThanh = null; }
       }
       if (TT.dangBat) { tatCamera(); hienKetQua('cho', '📷', 'Đã tắt camera', 'Bấm "Bật camera" để quét tiếp'); }
-      else batCamera($('selCamera').value || '');
-    }
-
-    async function napDanhSachCamera() {
-      const sel = $('selCamera');
-      try {
-        const ds = (await navigator.mediaDevices.enumerateDevices()).filter(function(d) { return d.kind === 'videoinput'; });
-        if (ds.length < 2) { sel.classList.add('an'); return; }
-        const dangDung = TT.luong && TT.luong.getVideoTracks()[0] ? (TT.luong.getVideoTracks()[0].getSettings().deviceId || '') : '';
-        sel.innerHTML = '';
-        ds.forEach(function(c, i) { const o = document.createElement('option'); o.value = c.deviceId; o.textContent = c.label || ('Camera ' + (i + 1)); sel.appendChild(o); });
-        if (dangDung) sel.value = dangDung;
-        sel.classList.remove('an');
-      } catch (e) {
-        sel.classList.add('an');
-      }
+      else batCamera();
     }
 
     async function doiCamera() {
+      TT.huongCam = TT.huongCam === 'sau' ? 'truoc' : 'sau';
       await tatCamera();
-      batCamera($('selCamera').value);
+      batCamera();
     }
 
+    window.addEventListener('online', function() {
+      if (!TT.token) return;
+      clearTimeout(TT.henGui); TT.henGui = 0; TT.soLanThuLai = 0;
+      guiHangCho();
+    });
+
     document.addEventListener('visibilitychange', function() {
-      if (!document.hidden && TT.token && !$('manQuet').classList.contains('an')) taiLichDangMo();
+      if (!document.hidden && TT.token && !$('manQuet').classList.contains('an')) { taiLichDangMo(); guiHangCho(); }
       if (document.hidden && TT.dangBat) { tatCamera(); hienKetQua('cho', '📷', 'Camera đã tạm tắt', 'Bấm "Bật camera" để quét tiếp'); }
     });
 
